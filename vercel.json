@@ -1,0 +1,35 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/search",
+      "destination": "/api/search"
+    },
+    {
+      "source": "/api/profile",
+      "destination": "/api/profile"
+    },
+    {
+      "source": "/api/reports",
+      "destination": "/api/reports"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/scrape"
+    },
+    {
+      "source": "/politician/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/search.ts": {
+      "maxDuration": 30
+    },
+    "api/profile.ts": {
+      "maxDuration": 60
+    },
+    "api/reports.ts": {
+      "maxDuration": 30
+    }
+  }
+}

@@ -1,0 +1,8 @@
+id,politician_id,year,total_assets,liabilities,source_url
+1,1,2012,109900000,27900000,https://myneta.info/gujarat2012/candidate.php?candidate_id=742
+2,1,2017,343100000,1570000,https://myneta.info/gujarat2017/candidate.php?candidate_id=6223
+3,1,2019,403900000,28600000,https://myneta.info/LokSabha2024/candidate.php?candidate_id=4427
+4,2,2014,16500000,32000,https://myneta.info/ls2014/candidate.php?candidate_id=5815
+5,2,2019,25000000,40000,https://myneta.info/LokSabha2019/candidate.php?candidate_id=5639
+6,3,2014,94000000,0,https://myneta.info/ls2014/candidate.php?candidate_id=601
+7,3,2019,158800000,7200000,https://myneta.info/LokSabha2019/candidate.php?candidate_id=4643
