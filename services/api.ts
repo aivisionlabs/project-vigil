@@ -31,7 +31,10 @@ export interface ReportsResponse {
 
 // ─── Search ──────────────────────────────────────────────────────────────────
 
-export async function searchPoliticians(query: string): Promise<SearchResponse> {
+export async function searchPoliticians(
+  query: string,
+  onLiveUpdate?: (response: SearchResponse) => void,
+): Promise<SearchResponse> {
   const indexCount = POLITICIAN_INDEX_COUNT;
 
   // Short/empty queries → show default set from local index
@@ -44,11 +47,12 @@ export async function searchPoliticians(query: string): Promise<SearchResponse> 
     };
   }
 
-  // Always run local fuzzy search (instant)
-  const fuzzySuggestions = fuzzySearchPoliticians(query, 15);
+  // Run local fuzzy search and Supabase cache check in parallel
+  const [fuzzySuggestions, remoteCached] = await Promise.all([
+    Promise.resolve(fuzzySearchPoliticians(query, 15)),
+    getCachedSearchResults(query),
+  ]);
 
-  // Check Supabase search cache
-  const remoteCached = await getCachedSearchResults(query);
   if (remoteCached && remoteCached.length > 0) {
     return {
       results: remoteCached,
@@ -58,7 +62,35 @@ export async function searchPoliticians(query: string): Promise<SearchResponse> 
     };
   }
 
-  // Try live API search
+  // Return fuzzy results immediately, fetch live results in background
+  if (onLiveUpdate) {
+    fetchLiveSearch(query)
+      .then((data) => {
+        if (data.results && data.results.length > 0) {
+          cacheSearchResults(query, data.results);
+          onLiveUpdate({
+            results: data.results,
+            meta: { source: 'live', fetchedAt: data.meta?.fetchedAt },
+            suggestions: fuzzySuggestions,
+            indexCount,
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn('Live search failed, keeping local results:', err);
+      });
+
+    // Return fuzzy results instantly
+    if (fuzzySuggestions.length > 0) {
+      return {
+        results: fuzzySuggestions,
+        meta: { source: 'fallback', reason: 'Showing local results. Live data loading...' },
+        indexCount,
+      };
+    }
+  }
+
+  // No onLiveUpdate callback — blocking mode (used for slug lookups)
   try {
     const data = await fetchLiveSearch(query);
 
@@ -72,12 +104,10 @@ export async function searchPoliticians(query: string): Promise<SearchResponse> 
       };
     }
 
-    // API returned 0 results — fuzzy suggestions become the fallback
     if (fuzzySuggestions.length > 0) {
       return {
-        results: [],
-        meta: { source: 'live', fetchedAt: data.meta?.fetchedAt },
-        suggestions: fuzzySuggestions,
+        results: fuzzySuggestions,
+        meta: { source: 'fallback', reason: 'No live results found. Showing local index results.' },
         indexCount,
       };
     }
@@ -86,7 +116,6 @@ export async function searchPoliticians(query: string): Promise<SearchResponse> 
   } catch (err) {
     console.warn('Live search failed, using local fuzzy search:', err);
 
-    // Live API failed — serve fuzzy results directly as primary results
     if (fuzzySuggestions.length > 0) {
       return {
         results: fuzzySuggestions,

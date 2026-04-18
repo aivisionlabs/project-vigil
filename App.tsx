@@ -45,6 +45,7 @@ const App: React.FC = () => {
     constituency: string;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLiveLoading, setIsLiveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMeta, setSearchMeta] = useState<DataMeta | null>(null);
@@ -91,32 +92,51 @@ const App: React.FC = () => {
   // Search
   useEffect(() => {
     if (route.page !== "home") return;
+    let cancelled = false;
     const performSearch = async () => {
       try {
         setIsLoading(true);
+        setIsLiveLoading(false);
         setError(null);
-        const { results, meta, suggestions: sugg, indexCount: count } = await searchPoliticians(searchQuery);
+
+        const handleLiveUpdate = ({ results, meta, suggestions: sugg, indexCount: count }: import('./services/api').SearchResponse) => {
+          if (cancelled) return;
+          setPoliticians(results);
+          setSearchMeta(meta);
+          if (sugg) setSuggestions(sugg);
+          if (count) setIndexCount(count);
+          setIsLiveLoading(false);
+        };
+
+        const { results, meta, suggestions: sugg, indexCount: count } = await searchPoliticians(searchQuery, handleLiveUpdate);
+        if (cancelled) return;
         setPoliticians(results);
         setSearchMeta(meta);
         setSuggestions(sugg || []);
         setIndexCount(count || 0);
+        // If source is fallback with live loading in progress, show subtle indicator
+        if (meta.source === 'fallback' && meta.reason?.includes('Live data loading')) {
+          setIsLiveLoading(true);
+        }
       } catch (err) {
+        if (cancelled) return;
         setError(
           err instanceof Error
             ? err.message
             : "Failed to search for politicians.",
         );
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
     performSearch();
+    return () => { cancelled = true; };
   }, [searchQuery, route.page]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
-    // If on profile page, navigate back to home
-    if (window.location.pathname !== "/") {
+    // If on profile page, navigate back to home only when user actively searches
+    if (query && window.location.pathname !== "/") {
       window.history.pushState(null, "", "/");
       setRoute({ page: "home" });
       setSelectedPolitician(null);
@@ -242,7 +262,14 @@ const App: React.FC = () => {
                         </span>
                       </div>
                     ) : (
-                      <DataBadge meta={searchMeta} />
+                      <div className="flex items-center gap-2">
+                        <DataBadge meta={searchMeta} />
+                        {isLiveLoading && (
+                          <span className="text-[11px] text-accent animate-pulse">
+                            Fetching live data…
+                          </span>
+                        )}
+                      </div>
                     )}
                     <span className="text-xs text-text-tertiary font-data">
                       {politicians.length} result

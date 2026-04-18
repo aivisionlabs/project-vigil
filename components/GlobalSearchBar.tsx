@@ -17,7 +17,7 @@ export const GlobalSearchBar: React.FC<GlobalSearchBarProps> = ({ onSearch, isSe
     }
     debounceTimeout.current = window.setTimeout(() => {
       onSearch(query);
-    }, 300);
+    }, 500);
 
     return () => {
       if (debounceTimeout.current) {

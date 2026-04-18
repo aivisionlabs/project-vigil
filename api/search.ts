@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as cheerio from 'cheerio';
-import { aiExtractSearchResults } from './lib/aiExtractor.js';
 
 const MYNETA_BASE = 'https://www.myneta.info';
 
@@ -82,28 +81,8 @@ async function searchElection(electionPath: string, query: string): Promise<Sear
     if (!response.ok) return [];
 
     const html = await response.text();
-    const $ = cheerio.load(html);
-    const bodyText = $('body').text();
 
-    // Try AI extraction first
-    const aiResults = await aiExtractSearchResults(bodyText, query);
-
-    if (aiResults.length > 0) {
-      return aiResults.map(r => ({
-        name: r.name,
-        party: r.party,
-        constituency: r.constituency,
-        profileUrl: r.candidateId
-          ? `${MYNETA_BASE}/${electionPath}/candidate.php?candidate_id=${r.candidateId}`
-          : '',
-        election: electionPath,
-        criminalCases: r.criminalCases || 0,
-        totalAssets: r.totalAssets || 'Not available',
-        education: r.education || 'Not available',
-      })).filter(r => r.profileUrl); // only include results with valid profile URLs
-    }
-
-    // Fallback to regex extraction
+    // Use fast regex/cheerio extraction (AI extraction skipped for search speed)
     return regexExtractResults(html, electionPath, query);
   } catch (err) {
     console.warn(`Search failed for ${electionPath}:`, err instanceof Error ? err.message : err);
