@@ -559,6 +559,8 @@ const ProfilePage: React.FC<{
     constituency: string;
     totalAssets?: string;
     election?: string;
+    criminalCases?: number;
+    education?: string;
   } | null>(null);
   const [isResolving, setIsResolving] = useState(true);
   const [resolveError, setResolveError] = useState(false);
@@ -568,10 +570,20 @@ const ProfilePage: React.FC<{
   // Update OG meta tags for this politician
   useEffect(() => {
     const title = `${politician?.name || displayName} — Project Vigil`;
+    const descParts = politician
+      ? [
+          `${politician.name}`,
+          politician.party && `${politician.party}`,
+          politician.constituency && `${politician.constituency}`,
+          politician.totalAssets && `Assets: ${politician.totalAssets}`,
+          politician.criminalCases != null && `Criminal Cases: ${politician.criminalCases}`,
+          politician.education && `Education: ${politician.education}`,
+        ].filter(Boolean).join(' · ')
+      : '';
     const description = politician
-      ? `View ${politician.name}'s assets, criminal cases, and parliamentary record. ${politician.party} — ${politician.constituency}.`
+      ? `${descParts}. View full profile on Project Vigil.`
       : `View ${displayName}'s profile on Project Vigil.`;
-    const ogImageUrl = `/api/og?name=${encodeURIComponent(politician?.name || displayName)}${politician?.party ? `&party=${encodeURIComponent(politician.party)}` : ''}${politician?.constituency ? `&constituency=${encodeURIComponent(politician.constituency)}` : ''}${politician?.totalAssets ? `&assets=${encodeURIComponent(politician.totalAssets)}` : ''}`;
+    const ogImageUrl = `/api/og?name=${encodeURIComponent(politician?.name || displayName)}${politician?.party ? `&party=${encodeURIComponent(politician.party)}` : ''}${politician?.constituency ? `&constituency=${encodeURIComponent(politician.constituency)}` : ''}${politician?.totalAssets ? `&assets=${encodeURIComponent(politician.totalAssets)}` : ''}${politician?.criminalCases != null ? `&cases=${encodeURIComponent(String(politician.criminalCases))}` : ''}${politician?.education ? `&education=${encodeURIComponent(politician.education)}` : ''}`;
 
     document.title = title;
 
@@ -633,6 +645,8 @@ const ProfilePage: React.FC<{
         constituency: localMatch.constituency,
         totalAssets: localMatch.totalAssets,
         election: localMatch.election,
+        criminalCases: localMatch.criminalCases,
+        education: localMatch.education,
       });
       setIsResolving(false);
       return;
@@ -652,6 +666,8 @@ const ProfilePage: React.FC<{
             constituency: match.constituency,
             totalAssets: match.totalAssets,
             election: match.election,
+            criminalCases: match.criminalCases,
+            education: match.education,
           });
         } else {
           setResolveError(true);

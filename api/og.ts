@@ -3,13 +3,14 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const { name, party, constituency, assets, cases } = req.query;
+  const { name, party, constituency, assets, cases, education } = req.query;
 
   const politicianName = (Array.isArray(name) ? name[0] : name) || 'Politician';
   const politicianParty = (Array.isArray(party) ? party[0] : party) || '';
   const politicianConstituency = (Array.isArray(constituency) ? constituency[0] : constituency) || '';
   const totalAssets = (Array.isArray(assets) ? assets[0] : assets) || '';
   const criminalCases = (Array.isArray(cases) ? cases[0] : cases) || '';
+  const politicianEducation = (Array.isArray(education) ? education[0] : education) || '';
 
   // Read the logo as base64
   let logoBase64 = '';
@@ -55,10 +56,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       <!-- Main content -->
       <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 60px">
         <div style="font-size:52px;font-weight:800;line-height:1.15;margin-bottom:16px">${escapeHtml(politicianName)}</div>
-        <div style="display:flex;align-items:center;gap:16px;margin-bottom:32px">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:${politicianEducation ? '12px' : '32px'}">
           ${politicianParty ? `<span style="font-size:22px;color:#e8963e;font-weight:600">${escapeHtml(politicianParty)}</span>` : ''}
           ${politicianConstituency ? `<span style="font-size:18px;color:#94a3b8">${escapeHtml(politicianConstituency)}</span>` : ''}
         </div>
+        ${politicianEducation ? `<div style="font-size:16px;color:#64748b;margin-bottom:32px">${escapeHtml(politicianEducation)}</div>` : ''}
         ${statsHtml ? `<div style="display:flex;align-items:center;background:#151922;border:1px solid #2a3140;border-radius:12px;padding:20px 8px;width:fit-content">${statsHtml}</div>` : ''}
       </div>
 
