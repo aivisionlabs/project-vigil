@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getPoliticianProfile } from '../services/api';
+import { getPoliticianProfile, getAssociatedReports } from '../services/api';
 import { fetchLiveProfile } from '../services/liveFetcher';
 import { mapApiProfile } from '../services/profileMerger';
 import { cacheRemoteProfile } from '../services/supabaseCache';
-import type { PoliticianProfileData, DataMeta } from '../types';
+import type { PoliticianProfileData, AssociatedReport, DataMeta } from '../types';
 import { ProfileHeader } from './ProfileHeader';
 import { AssetGrowthChart } from './AssetGrowthChart';
 import { ItrIncomeChart } from './ItrIncomeChart';
 import { CriminalCasesTable } from './CriminalCasesTable';
+import { AssociatedReportsList } from './AssociatedReportsList';
 import { RtiHelper } from './RtiHelper';
 import { PersonalDetails } from './PersonalDetails';
 import { DataBadge } from './DataBadge';
@@ -111,6 +112,11 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
   const [profileMeta, setProfileMeta] = useState<DataMeta | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
 
+  const [reports, setReports] = useState<AssociatedReport[]>([]);
+  const [reportsMeta, setReportsMeta] = useState<DataMeta | null>(null);
+  const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportsError, setReportsError] = useState<string | null>(null);
+
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isScraping, setIsScraping] = useState(false);
@@ -137,6 +143,23 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
     };
     fetchProfile();
   }, [profileUrl]);
+
+  useEffect(() => {
+    const fetchReports = async () => {
+      try {
+        setReportsLoading(true);
+        setReportsError(null);
+        const result = await getAssociatedReports(politicianName, politicianParty, politicianConstituency);
+        setReports(result.reports);
+        setReportsMeta(result.meta);
+      } catch (err) {
+        setReportsError(err instanceof Error ? err.message : 'Failed to load reports.');
+      } finally {
+        setReportsLoading(false);
+      }
+    };
+    fetchReports();
+  }, [politicianName, politicianParty, politicianConstituency]);
 
   const handleScrapeProfile = useCallback(async () => {
     setIsScraping(true);
@@ -330,6 +353,13 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
       ) : displayProfile && !isPartialProfile ? (
         <CriminalCasesTable cases={displayProfile.criminalCases} />
       ) : null}
+
+      {/* ── Associated Reports (CAG/CVC) ────────────── */}
+      {(reportsLoading) ? (
+        <TableSkeleton title="associated reports" />
+      ) : (
+        <AssociatedReportsList reports={reports} error={reportsError} meta={reportsMeta} />
+      )}
 
       {/* ── Parliamentary Performance (PRS India) ────────────── */}
       {profileLoading ? (

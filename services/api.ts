@@ -3,8 +3,8 @@
  * Search uses local fuse.js fuzzy search over the scraped politician index.
  * Profile fetching uses live API with Supabase caching.
  */
-import type { PoliticianSummary, PoliticianProfileData, DataMeta } from '../types';
-import { fetchLiveSearch, fetchLiveProfile } from './liveFetcher';
+import type { PoliticianSummary, PoliticianProfileData, AssociatedReport, DataMeta } from '../types';
+import { fetchLiveSearch, fetchLiveProfile, fetchLiveReports } from './liveFetcher';
 import { mapApiProfile } from './profileMerger';
 import { getCachedRemoteProfile, cacheRemoteProfile, getCachedSearchResults, cacheSearchResults } from './supabaseCache';
 import { fuzzySearchPoliticians, getDefaultPoliticians, POLITICIAN_INDEX_COUNT } from './fuzzySearch';
@@ -22,6 +22,11 @@ export interface ProfileResponse {
   profile: PoliticianProfileData | null;
   meta: DataMeta;
   warnings: string[];
+}
+
+export interface ReportsResponse {
+  reports: AssociatedReport[];
+  meta: DataMeta;
 }
 
 // ─── Search ──────────────────────────────────────────────────────────────────
@@ -142,6 +147,28 @@ export async function getPoliticianProfile(profileUrl: string): Promise<ProfileR
       profile: null,
       meta: { source: 'fallback', reason: 'Profile not available from any source.' },
       warnings: ['Could not load profile from any source.'],
+    };
+  }
+}
+
+// ─── Associated Reports (CAG/CVC) ──────────────────────────────────────────
+
+export async function getAssociatedReports(
+  name: string,
+  party?: string,
+  constituency?: string,
+): Promise<ReportsResponse> {
+  try {
+    const data = await fetchLiveReports(name, party, constituency);
+    return {
+      reports: data.reports ?? [],
+      meta: { source: 'live', fetchedAt: data.meta?.generatedAt },
+    };
+  } catch (err) {
+    console.warn('Reports fetch failed:', err);
+    return {
+      reports: [],
+      meta: { source: 'fallback', reason: 'Could not generate report findings.' },
     };
   }
 }
