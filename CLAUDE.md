@@ -4,39 +4,76 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PROJECT VIGIL is a transparent governance dashboard for visualizing public data about Indian politicians — assets, criminal cases, and audit reports. It is a proof-of-concept application.
+Project Vigil is a transparent governance dashboard for visualizing public data about Indian politicians — assets, criminal cases, parliamentary performance, and audit reports. It scrapes data live from myneta.info and prsindia.org, with AI-powered extraction and graceful fallback to a bundled local index of 4000+ politicians.
 
 ## Commands
 
-- `npm run dev` — Start dev server on port 3000
+- `npm run dev` — Start Vite dev server on port 3000 (API routes unavailable locally; falls back to cached/local data)
 - `npm run build` — Production build via Vite
 - `npm run preview` — Preview production build
-
-There are no test or lint scripts configured.
+- `npm run test` — Run Vitest once
+- `npm run test:watch` — Run Vitest in watch mode
+- `npm run seed` — Seed Supabase from CSV files via `tsx scripts/seed-supabase.ts`
 
 ## Architecture
 
-**Frontend**: React 19 + TypeScript, bundled with Vite. Tailwind CSS is loaded via CDN (`index.html`), not as a build dependency. Custom brand colors are defined inline in `index.html`'s Tailwind config.
+### Frontend
 
-**Data layer**: Currently uses hardcoded TypeScript data files in `data/` (one per politician). `services/api.ts` serves as the API layer — it searches/filters these local datasets and uses the Gemini API (`@google/genai`) to generate plausible associated audit reports for select profiles.
+React 19 + TypeScript, bundled with Vite. Tailwind CSS is loaded via CDN in `index.html` (not a build dependency) with custom brand colors defined inline. No router library — `App.tsx` uses manual URL parsing with `window.location.pathname` and the History API for two routes: `/` (search) and `/politician/<slug>` (profile).
 
-**Supabase**: Client is set up in `services/supabaseClient.ts` but not yet configured with real credentials — it's placeholder/scaffolding.
+### Data Flow
 
-**Python scraper**: `scraper/scraper.py` (uses requests + BeautifulSoup) and a Vercel serverless function at `api/scrape.py`. These are binary/compiled files in the current state.
+```
+App.tsx (search/profile)
+  → services/api.ts (orchestrator: local → cache → live → fallback)
+    ├→ services/fuzzySearch.ts (Fuse.js on data/politician_index.json, instant)
+    ├→ services/supabaseCache.ts (Supabase cache: 24h profiles, 1h searches)
+    └→ services/liveFetcher.ts (fetch /api/* with AbortSignal timeouts)
+        → api/*.ts (Vercel serverless functions)
+          ├→ Scrapes myneta.info (cheerio) + prsindia.org
+          ├→ Claude Haiku for HTML extraction (fallback: regex)
+          └→ Gemini 2.5 Flash for audit report generation
+  → services/profileMerger.ts (maps raw API data → domain types)
+```
 
-**Path alias**: `@/*` maps to the project root (configured in both `tsconfig.json` and `vite.config.ts`).
+Every response includes a `DataMeta` object (`source: 'live' | 'cache' | 'fallback'`) so the UI can show data provenance.
 
-## Key Files
+### API Layer (`api/`)
 
-- `App.tsx` — Root component: search bar → politician list → profile detail view, with a session-scoped disclaimer modal
-- `services/api.ts` — All data fetching: `searchPoliticians`, `getPoliticianProfile`, `getAssociatedReports` (Gemini-powered)
-- `types.ts` — Core interfaces: `PoliticianSummary`, `PoliticianProfileData`, `AssetDeclaration`, `CriminalCase`, `AssociatedReport`
-- `components/PoliticianProfile.tsx` — Profile detail page orchestrating sub-components (header, asset chart, criminal cases, reports, RTI helper)
+Vercel serverless functions that scrape external sites. These only run in production (Vercel), not during local dev.
 
-## Environment
+- `api/search.ts` — Searches myneta.info across 13 election paths, deduplicates results
+- `api/profile.ts` — Scrapes full politician profile (assets, criminal cases, ITR income)
+- `api/reports.ts` — Generates audit report findings via Gemini AI
+- `api/prs.ts` — Fetches parliamentary performance from PRS India
+- `api/lib/aiExtractor.ts` — Claude Haiku extraction (truncates to 8KB, returns structured JSON)
+- `api/lib/prsScraper.ts` — PRS India scraper
+- `api/lib/matchIdentity.ts` — Fuzzy identity matching across data sources
 
-- `GEMINI_API_KEY` in `.env.local` — used for AI-generated audit report summaries. Exposed to the client via Vite's `define` config as `process.env.API_KEY` and `process.env.GEMINI_API_KEY`.
+### Services Layer (`services/`)
+
+- `api.ts` — Main orchestrator: `searchPoliticians()` and `getPoliticianProfile()` with three-tier fallback
+- `liveFetcher.ts` — Fetch wrappers with explicit timeouts (15s search, 20s profile) and HTML-response guards
+- `fuzzySearch.ts` — Fuse.js over bundled `data/politician_index.json` (4000+ entries)
+- `supabaseCache.ts` — Read/write Supabase cache with TTLs; gracefully handles missing config
+- `profileMerger.ts` — Maps raw API responses to `PoliticianProfileData` type
+
+### Path Alias
+
+`@/*` maps to the project root (configured in `tsconfig.json` and `vite.config.ts`).
+
+## Environment Variables
+
+In `.env.local`:
+
+- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — Supabase client (optional; app works without)
+- `ANTHROPIC_API_KEY` — Claude API for HTML extraction in serverless functions
+- `GEMINI_API_KEY` — Gemini API for audit report generation (also exposed to client via Vite `define`)
+
+## Testing
+
+Tests use Vitest with jsdom environment. Config in `vitest.config.ts`, setup in `tests/setup.ts`. Test files live in `tests/` (not colocated with source).
 
 ## Deployment
 
-Deployed on Vercel. `vercel.json` rewrites all `/api/*` routes to `/api/scrape`.
+Deployed on Vercel. `vercel.json` defines rewrites for each API route with per-function timeouts (profile: 60s, others: 30s) and SPA fallback (`/politician/*` → `/index.html`).
