@@ -116,5 +116,72 @@ export function getDefaultPoliticians(limit = 20): PoliticianSummary[] {
   return featured;
 }
 
+// ─── Filters ──────────────────────────────────────────────────────────────────
+
+export interface PoliticianFilters {
+  electionType?: 'Lok Sabha' | 'State Assembly';
+  party?: string;
+  state?: string;
+  hasCriminalCases?: boolean; // true = >0 cases, false = 0 cases
+}
+
+function applyFilters(list: IndexedPolitician[], filters: PoliticianFilters): IndexedPolitician[] {
+  return list.filter((p) => {
+    if (filters.electionType && p.electionType !== filters.electionType) return false;
+    if (filters.party && p.party !== filters.party) return false;
+    if (filters.state && p.state !== filters.state) return false;
+    if (filters.hasCriminalCases === true && (p.criminalCases === null || p.criminalCases === 0)) return false;
+    if (filters.hasCriminalCases === false && (p.criminalCases === null || p.criminalCases > 0)) return false;
+    return true;
+  });
+}
+
+/**
+ * Fuzzy-search with filters applied.
+ */
+export function fuzzySearchWithFilters(
+  query: string,
+  filters: PoliticianFilters,
+  limit = 15,
+): PoliticianSummary[] {
+  if (!query || query.trim().length < 2) return [];
+  const results = fuse.search(query.trim(), { limit: limit * 3 }); // over-fetch to compensate for filtering
+  const filtered = applyFilters(results.map((r) => r.item), filters);
+  return filtered.slice(0, limit).map(toSummary);
+}
+
+/**
+ * Get default politicians with filters applied.
+ */
+export function getDefaultPoliticiansFiltered(filters: PoliticianFilters, limit = 20): PoliticianSummary[] {
+  const hasFilters = filters.electionType || filters.party || filters.state || filters.hasCriminalCases !== undefined;
+
+  if (!hasFilters) return getDefaultPoliticians(limit);
+
+  const filtered = applyFilters(allPoliticians, filters);
+  return filtered
+    .sort((a, b) => (b.criminalCases ?? 0) - (a.criminalCases ?? 0))
+    .slice(0, limit)
+    .map(toSummary);
+}
+
+/** Get unique states sorted alphabetically */
+export function getAvailableStates(): string[] {
+  const states = new Set(allPoliticians.map((p) => p.state));
+  return [...states].sort();
+}
+
+/** Get top parties by candidate count */
+export function getTopParties(limit = 10): string[] {
+  const counts = new Map<string, number>();
+  for (const p of allPoliticians) {
+    counts.set(p.party, (counts.get(p.party) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([party]) => party);
+}
+
 /** Total count of indexed politicians */
 export const POLITICIAN_INDEX_COUNT = allPoliticians.length;

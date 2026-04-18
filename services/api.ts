@@ -7,7 +7,7 @@ import type { PoliticianSummary, PoliticianProfileData, AssociatedReport, DataMe
 import { fetchLiveSearch, fetchLiveProfile, fetchLiveReports } from './liveFetcher';
 import { mapApiProfile } from './profileMerger';
 import { getCachedRemoteProfile, cacheRemoteProfile, getCachedSearchResults, cacheSearchResults } from './supabaseCache';
-import { fuzzySearchPoliticians, getDefaultPoliticians, POLITICIAN_INDEX_COUNT } from './fuzzySearch';
+import { fuzzySearchPoliticians, getDefaultPoliticians, POLITICIAN_INDEX_COUNT, fuzzySearchWithFilters, getDefaultPoliticiansFiltered, type PoliticianFilters } from './fuzzySearch';
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -34,23 +34,27 @@ export interface ReportsResponse {
 export async function searchPoliticians(
   query: string,
   onLiveUpdate?: (response: SearchResponse) => void,
+  filters?: PoliticianFilters,
 ): Promise<SearchResponse> {
   const indexCount = POLITICIAN_INDEX_COUNT;
+  const hasFilters = filters && (filters.electionType || filters.party || filters.state || filters.hasCriminalCases !== undefined);
 
   // Short/empty queries → show default set from local index
   if (!query || query.trim().length < 2) {
-    const defaults = getDefaultPoliticians(20);
+    const defaults = hasFilters
+      ? getDefaultPoliticiansFiltered(filters, 20)
+      : getDefaultPoliticians(20);
     return {
       results: defaults,
-      meta: { source: 'cache', reason: 'Showing notable politicians. Type 2+ characters to search.' },
+      meta: { source: 'cache', reason: hasFilters ? 'Filtered results from local index.' : 'Showing notable politicians. Type 2+ characters to search.' },
       indexCount,
     };
   }
 
   // Run local fuzzy search and Supabase cache check in parallel
   const [fuzzySuggestions, remoteCached] = await Promise.all([
-    Promise.resolve(fuzzySearchPoliticians(query, 15)),
-    getCachedSearchResults(query),
+    Promise.resolve(hasFilters ? fuzzySearchWithFilters(query, filters, 15) : fuzzySearchPoliticians(query, 15)),
+    hasFilters ? Promise.resolve(null) : getCachedSearchResults(query), // skip cache when filtering
   ]);
 
   if (remoteCached && remoteCached.length > 0) {

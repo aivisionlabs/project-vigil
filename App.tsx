@@ -6,7 +6,7 @@ import { DataBadge } from "./components/DataBadge";
 import { ComingSoonSection } from "./components/ComingSoonSection";
 import { RequestPolitician } from "./components/RequestPolitician";
 import { searchPoliticians } from "./services/api";
-import { fuzzySearchPoliticians } from "./services/fuzzySearch";
+import { fuzzySearchPoliticians, getAvailableStates, getTopParties, type PoliticianFilters } from "./services/fuzzySearch";
 import type { PoliticianSummary, DataMeta } from "./types";
 
 // ─── Slug helpers ───────────────────────────────────────────────────────────
@@ -138,6 +138,25 @@ const HomePage: React.FC<{
   const [isLoading, setIsLoading] = useState(true);
   const [isLiveLoading, setIsLiveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<PoliticianFilters>({});
+  const [showStateDropdown, setShowStateDropdown] = useState(false);
+  const [showPartyDropdown, setShowPartyDropdown] = useState(false);
+
+  const availableStates = React.useMemo(() => getAvailableStates(), []);
+  const topParties = React.useMemo(() => getTopParties(10), []);
+
+  const activeFilterCount = [filters.electionType, filters.party, filters.state, filters.hasCriminalCases].filter(
+    (v) => v !== undefined,
+  ).length;
+
+  const toggleFilter = useCallback(<K extends keyof PoliticianFilters>(key: K, value: PoliticianFilters[K]) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: prev[key] === value ? undefined : value,
+    }));
+  }, []);
+
+  const clearFilters = useCallback(() => setFilters({}), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,7 +181,7 @@ const HomePage: React.FC<{
         };
 
         const { results, meta, suggestions: sugg, indexCount: count } =
-          await searchPoliticians(searchQuery, handleLiveUpdate);
+          await searchPoliticians(searchQuery, handleLiveUpdate, filters);
         if (cancelled) return;
         setPoliticians(results);
         setSearchMeta(meta);
@@ -189,7 +208,17 @@ const HomePage: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [searchQuery]);
+  }, [searchQuery, filters]);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setShowStateDropdown(false);
+      setShowPartyDropdown(false);
+    };
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, []);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -211,6 +240,147 @@ const HomePage: React.FC<{
             isSearching={isLoading && searchQuery.length >= 2}
           />
 
+          {/* Quick Filters */}
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {/* Election type chips */}
+            <button
+              onClick={() => toggleFilter("electionType", "Lok Sabha")}
+              className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+                filters.electionType === "Lok Sabha"
+                  ? "bg-accent text-white border-accent"
+                  : "bg-surface-secondary text-text-secondary border-surface-border hover:border-accent/40 hover:text-accent"
+              }`}
+            >
+              Lok Sabha
+            </button>
+            <button
+              onClick={() => toggleFilter("electionType", "State Assembly")}
+              className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+                filters.electionType === "State Assembly"
+                  ? "bg-accent text-white border-accent"
+                  : "bg-surface-secondary text-text-secondary border-surface-border hover:border-accent/40 hover:text-accent"
+              }`}
+            >
+              State Assembly
+            </button>
+
+            <span className="w-px h-5 bg-surface-border" />
+
+            {/* Criminal cases chips */}
+            <button
+              onClick={() => toggleFilter("hasCriminalCases", true)}
+              className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+                filters.hasCriminalCases === true
+                  ? "bg-status-warning/20 text-status-warning border-status-warning/40"
+                  : "bg-surface-secondary text-text-secondary border-surface-border hover:border-status-warning/40 hover:text-status-warning"
+              }`}
+            >
+              Has Criminal Cases
+            </button>
+            <button
+              onClick={() => toggleFilter("hasCriminalCases", false)}
+              className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors ${
+                filters.hasCriminalCases === false
+                  ? "bg-status-clean/20 text-status-clean border-status-clean/40"
+                  : "bg-surface-secondary text-text-secondary border-surface-border hover:border-status-clean/40 hover:text-status-clean"
+              }`}
+            >
+              Clean Record
+            </button>
+
+            <span className="w-px h-5 bg-surface-border" />
+
+            {/* Party dropdown */}
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => { setShowPartyDropdown((v) => !v); setShowStateDropdown(false); }}
+                className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1 ${
+                  filters.party
+                    ? "bg-accent text-white border-accent"
+                    : "bg-surface-secondary text-text-secondary border-surface-border hover:border-accent/40 hover:text-accent"
+                }`}
+              >
+                {filters.party || "Party"}
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showPartyDropdown && (
+                <div className="absolute top-full left-0 mt-1 bg-surface-secondary border border-surface-border rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto min-w-[180px]">
+                  {filters.party && (
+                    <button
+                      onClick={() => { setFilters((f) => ({ ...f, party: undefined })); setShowPartyDropdown(false); }}
+                      className="w-full text-left text-xs px-3 py-2 text-accent hover:bg-surface-tertiary"
+                    >
+                      Clear party filter
+                    </button>
+                  )}
+                  {topParties.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => { toggleFilter("party", p); setShowPartyDropdown(false); }}
+                      className={`w-full text-left text-xs px-3 py-2 hover:bg-surface-tertiary transition-colors ${
+                        filters.party === p ? "text-accent font-semibold" : "text-text-secondary"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* State dropdown */}
+            <div className="relative" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={() => { setShowStateDropdown((v) => !v); setShowPartyDropdown(false); }}
+                className={`text-xs font-medium px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1 ${
+                  filters.state
+                    ? "bg-accent text-white border-accent"
+                    : "bg-surface-secondary text-text-secondary border-surface-border hover:border-accent/40 hover:text-accent"
+                }`}
+              >
+                {filters.state || "State"}
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showStateDropdown && (
+                <div className="absolute top-full left-0 mt-1 bg-surface-secondary border border-surface-border rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto min-w-[200px]">
+                  {filters.state && (
+                    <button
+                      onClick={() => { setFilters((f) => ({ ...f, state: undefined })); setShowStateDropdown(false); }}
+                      className="w-full text-left text-xs px-3 py-2 text-accent hover:bg-surface-tertiary"
+                    >
+                      Clear state filter
+                    </button>
+                  )}
+                  {availableStates.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => { toggleFilter("state", s); setShowStateDropdown(false); }}
+                      className={`w-full text-left text-xs px-3 py-2 hover:bg-surface-tertiary transition-colors ${
+                        filters.state === s ? "text-accent font-semibold" : "text-text-secondary"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Clear all filters */}
+            {activeFilterCount > 0 && (
+              <button
+                onClick={clearFilters}
+                className="text-xs text-accent hover:text-accent-hover transition-colors ml-1"
+              >
+                Clear all ({activeFilterCount})
+              </button>
+            )}
+          </div>
+
           <div className="mt-6">
             {/* Data source indicator */}
             {searchMeta && !isLoading && (
@@ -218,11 +388,13 @@ const HomePage: React.FC<{
                 {searchQuery.length < 2 ? (
                   <div className="flex items-center gap-2">
                     <h2 className="text-sm font-semibold text-text-primary">
-                      Top Leaders
+                      {activeFilterCount > 0 ? "Filtered Results" : "Top Leaders"}
                     </h2>
-                    <span className="text-[10px] font-medium text-accent bg-accent-muted px-1.5 py-0.5 rounded-badge">
-                      Lok Sabha 2024
-                    </span>
+                    {activeFilterCount === 0 && (
+                      <span className="text-[10px] font-medium text-accent bg-accent-muted px-1.5 py-0.5 rounded-badge">
+                        Lok Sabha 2024
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
