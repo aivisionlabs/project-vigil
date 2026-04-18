@@ -225,6 +225,8 @@ const App: React.FC = () => {
                   politicianName={selectedPolitician.name}
                   politicianParty={selectedPolitician.party}
                   politicianConstituency={selectedPolitician.constituency}
+                  indexTotalAssets={selectedPolitician.totalAssets}
+                  indexElection={selectedPolitician.election}
                 />
               </div>
             ) : (

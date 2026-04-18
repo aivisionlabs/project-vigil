@@ -17,11 +17,6 @@ export interface LiveProfileResult {
   meta: { source: string; fetchedAt: string; dataComplete: boolean };
 }
 
-export interface LiveReportsResult {
-  reports: AssociatedReport[];
-  meta: { source: string; generatedAt?: string; reason?: string };
-}
-
 export interface LivePrsResult {
   performance: {
     name: string;
@@ -36,6 +31,11 @@ export interface LivePrsResult {
     sourceUrl: string;
   } | null;
   meta: { source: string; fetchedAt?: string; reason?: string };
+}
+
+export interface LiveReportsResult {
+  reports: AssociatedReport[];
+  meta: { source: string; generatedAt?: string; reason?: string };
 }
 
 // ─── Configuration ────────────────────────────────────────────────────────────

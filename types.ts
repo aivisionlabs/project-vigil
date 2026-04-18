@@ -17,6 +17,14 @@ export interface AssetDeclaration {
   indexGrowthPercentage?: number;
 }
 
+export interface ItrIncome {
+  financialYear: string;
+  selfIncome: number;
+  spouseIncome: number;
+  hufIncome: number;
+  totalIncome: number;
+}
+
 export interface CriminalCase {
   ipcSection: string;
   description: string;
@@ -32,6 +40,14 @@ export interface AssociatedReport {
   sourceUrl: string;
 }
 
+export interface ParliamentaryQuestion {
+  date: string;           // "02.04.2026"
+  title: string;          // "Flights from Shravasti Airport"
+  type: 'Starred' | 'Unstarred' | string;
+  ministry: string;       // "Civil Aviation"
+  documentUrl?: string;   // sansad.in PDF link
+}
+
 export interface ParliamentaryPerformance {
   attendance: {
     percentage: number;
@@ -41,6 +57,7 @@ export interface ParliamentaryPerformance {
   questionsAsked: number | null;
   debatesParticipated: number | null;
   billsIntroduced: number | null;
+  questions?: ParliamentaryQuestion[];
   term: string; // e.g. "18th Lok Sabha"
   sourceUrl: string;
 }
@@ -55,6 +72,7 @@ export interface PoliticianProfileData {
   age?: string;
   photoUrl: string;
   assetDeclarations: AssetDeclaration[];
+  itrIncome?: ItrIncome[];
   criminalCases: CriminalCase[];
   additionalInfo?: {
     selfProfession: string;

@@ -53,6 +53,8 @@ export function normalizeName(name: string): string {
   let n = name.toLowerCase().trim();
   // Remove periods and commas
   n = n.replace(/[.,]/g, '');
+  // Strip parenthetical suffixes like (winner), (SC), (ST)
+  n = n.replace(/\s*\([^)]*\)\s*/g, ' ');
   // Strip honorifics at the start
   for (const h of HONORIFICS) {
     if (n.startsWith(h + ' ')) {

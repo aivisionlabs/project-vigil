@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import type { ParliamentaryPerformance as PerfData } from '../types';
 
 interface ParliamentaryPerformanceProps {
@@ -38,7 +38,58 @@ const AttendanceBar: React.FC<{
   </div>
 );
 
+const QuestionIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+  </svg>
+);
+
+const DebateIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+  </svg>
+);
+
+const BillIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+  </svg>
+);
+
+const ExternalLinkMini = () => (
+  <svg className="w-3 h-3 inline-block ml-1 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+  </svg>
+);
+
+const INITIAL_QUESTIONS_SHOWN = 10;
+
 export const ParliamentaryPerformance: React.FC<ParliamentaryPerformanceProps> = ({ data }) => {
+  const [showAllQuestions, setShowAllQuestions] = useState(false);
+
+  const questions = data.questions ?? [];
+
+  const { starredCount, unstarredCount, topMinistries } = useMemo(() => {
+    const starred = questions.filter(q => q.type.toLowerCase() === 'starred').length;
+    const unstarred = questions.filter(q => q.type.toLowerCase() === 'unstarred').length;
+
+    const ministryCounts: Record<string, number> = {};
+    for (const q of questions) {
+      if (q.ministry) {
+        ministryCounts[q.ministry] = (ministryCounts[q.ministry] || 0) + 1;
+      }
+    }
+    const sorted = Object.entries(ministryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    return { starredCount: starred, unstarredCount: unstarred, topMinistries: sorted };
+  }, [questions]);
+
+  const visibleQuestions = showAllQuestions
+    ? questions
+    : questions.slice(0, INITIAL_QUESTIONS_SHOWN);
+
   return (
     <div className="bg-surface-secondary border border-surface-border p-5 rounded-card animate-fade-in">
       <div className="flex items-center justify-between mb-4">
@@ -54,7 +105,13 @@ export const ParliamentaryPerformance: React.FC<ParliamentaryPerformanceProps> =
       </div>
 
       {/* Attendance section */}
-      {data.attendance && (
+      {data.attendance && data.attendance.percentage === -1 ? (
+        <div className="mb-5 px-3 py-2 bg-surface-primary border border-surface-border rounded-lg">
+          <p className="text-xs text-text-secondary">
+            This MP is a <span className="font-semibold text-text-primary">Cabinet Minister</span>. Ministers represent the government in debates, so PRS does not report their attendance, questions, or private member bills.
+          </p>
+        </div>
+      ) : data.attendance ? (
         <div className="mb-5 space-y-2.5">
           <AttendanceBar
             label="This MP"
@@ -76,49 +133,128 @@ export const ParliamentaryPerformance: React.FC<ParliamentaryPerformanceProps> =
             />
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {data.questionsAsked !== null && (
-          <StatCard
-            label="Questions"
-            value={data.questionsAsked}
-            subtitle="Asked in Parliament"
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
-              </svg>
-            }
-          />
+          <StatCard label="Questions" value={data.questionsAsked} subtitle="Asked in Parliament" icon={<QuestionIcon />} />
         )}
-
         {data.debatesParticipated !== null && (
-          <StatCard
-            label="Debates"
-            value={data.debatesParticipated}
-            subtitle="Participated in"
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
-              </svg>
-            }
-          />
+          <StatCard label="Debates" value={data.debatesParticipated} subtitle="Participated in" icon={<DebateIcon />} />
         )}
-
         {data.billsIntroduced !== null && (
-          <StatCard
-            label="Bills"
-            value={data.billsIntroduced}
-            subtitle="Introduced"
-            icon={
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-              </svg>
-            }
-          />
+          <StatCard label="Bills" value={data.billsIntroduced} subtitle="Introduced" icon={<BillIcon />} />
         )}
       </div>
+
+      {/* ── Questions Detail Section ──────────────────────────── */}
+      {questions.length > 0 && (
+        <div className="mt-5 pt-4 border-t border-surface-border">
+          <h4 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+            <QuestionIcon />
+            Questions Breakdown
+          </h4>
+
+          {/* Type summary badges */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {starredCount > 0 && (
+              <span className="text-xs px-2.5 py-1 rounded-badge bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
+                {starredCount} Starred
+              </span>
+            )}
+            {unstarredCount > 0 && (
+              <span className="text-xs px-2.5 py-1 rounded-badge bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">
+                {unstarredCount} Unstarred
+              </span>
+            )}
+            {questions.length - starredCount - unstarredCount > 0 && (
+              <span className="text-xs px-2.5 py-1 rounded-badge bg-surface-primary text-text-tertiary border border-surface-border font-medium">
+                {questions.length - starredCount - unstarredCount} Other
+              </span>
+            )}
+          </div>
+
+          {/* Top ministries */}
+          {topMinistries.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs text-text-tertiary mb-2 uppercase tracking-wider">Top Ministries Questioned</p>
+              <div className="space-y-1.5">
+                {topMinistries.map(([ministry, count]) => (
+                  <div key={ministry} className="flex items-center gap-2">
+                    <div className="flex-1 bg-surface-primary rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-accent/60"
+                        style={{ width: `${(count / questions.length) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-text-secondary truncate max-w-[55%]">{ministry}</span>
+                    <span className="text-xs font-data text-text-tertiary w-6 text-right flex-shrink-0">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Questions table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-surface-border text-text-tertiary">
+                  <th className="text-left py-2 pr-3 font-medium w-24">Date</th>
+                  <th className="text-left py-2 pr-3 font-medium">Question</th>
+                  <th className="text-left py-2 pr-3 font-medium w-20">Type</th>
+                  <th className="text-left py-2 font-medium hidden sm:table-cell">Ministry</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleQuestions.map((q, i) => (
+                  <tr key={i} className="border-b border-surface-border/50 hover:bg-surface-primary/30 transition-colors">
+                    <td className="py-2 pr-3 text-text-tertiary font-data whitespace-nowrap">{q.date}</td>
+                    <td className="py-2 pr-3 text-text-primary">
+                      {q.documentUrl ? (
+                        <a
+                          href={q.documentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent hover:underline"
+                        >
+                          {q.title}
+                          <ExternalLinkMini />
+                        </a>
+                      ) : (
+                        q.title
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        q.type.toLowerCase() === 'starred'
+                          ? 'bg-amber-500/10 text-amber-400'
+                          : 'bg-blue-500/10 text-blue-400'
+                      }`}>
+                        {q.type}
+                      </span>
+                    </td>
+                    <td className="py-2 text-text-secondary hidden sm:table-cell truncate max-w-[200px]">{q.ministry}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Show more / less toggle */}
+          {questions.length > INITIAL_QUESTIONS_SHOWN && (
+            <button
+              onClick={() => setShowAllQuestions(!showAllQuestions)}
+              className="mt-3 text-xs text-accent hover:text-accent-hover transition-colors font-medium"
+            >
+              {showAllQuestions
+                ? 'Show fewer questions'
+                : `Show all ${questions.length} questions`}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Source attribution */}
       <div className="mt-4 pt-3 border-t border-surface-border flex items-center justify-between">

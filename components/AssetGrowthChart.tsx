@@ -1,5 +1,15 @@
 import React from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import type { AssetDeclaration } from '../types';
 import { SourceLink } from './SourceLink';
 
@@ -10,36 +20,47 @@ interface AssetGrowthChartProps {
 function formatCrore(amount: number): string {
   if (amount >= 10000000) return `${(amount / 10000000).toFixed(2)} Cr`;
   if (amount >= 100000) return `${(amount / 100000).toFixed(2)} L`;
-  return `${amount.toLocaleString('en-IN')}`;
+  return amount.toLocaleString('en-IN');
+}
+
+function formatYAxisCrore(amount: number): string {
+  if (amount >= 10000000) return `${(amount / 10000000).toFixed(0)} Cr`;
+  if (amount >= 100000) return `${(amount / 100000).toFixed(0)} L`;
+  if (amount >= 1000) return `${(amount / 1000).toFixed(0)}K`;
+  return `${amount}`;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    const assetData = payload.find((p: any) => p.dataKey === 'politicianGrowth');
-    const indexData = payload.find((p: any) => p.dataKey === 'indexGrowth');
-    const rawAssets = payload[0]?.payload?.rawAssets;
+  if (!active || !payload?.length) return null;
 
-    return (
-      <div className="bg-surface-primary p-3 rounded-lg border border-surface-border text-sm">
-        <p className="font-semibold text-text-primary mb-1.5 font-data">{`Year: ${label}`}</p>
-        {rawAssets !== undefined && (
-          <p className="text-accent font-semibold mb-1 font-data">Total: Rs {formatCrore(rawAssets)}</p>
-        )}
-        {assetData && assetData.value !== undefined && (
-          <p style={{ color: assetData.color }} className="font-data text-xs">
-            {`Asset Growth: ${Number(assetData.value).toFixed(2)}%`}
-          </p>
-        )}
-        {indexData && indexData.value !== undefined && (
-          <p style={{ color: indexData.color }} className="font-data text-xs">
-            {`Market Index: ${Number(indexData.value).toFixed(2)}%`}
-          </p>
-        )}
-        <p className="text-xs text-text-tertiary mt-1.5">Base year: {payload[0]?.payload?.baseYear}</p>
-      </div>
-    );
-  }
-  return null;
+  const assets = payload.find((p: any) => p.dataKey === 'totalAssets');
+  const liabilities = payload.find((p: any) => p.dataKey === 'liabilities');
+  const growth = payload.find((p: any) => p.dataKey === 'growthPct');
+
+  return (
+    <div className="bg-surface-primary p-3 rounded-lg border border-surface-border text-sm shadow-lg">
+      <p className="font-semibold text-text-primary mb-2 font-data">{label}</p>
+      {assets && (
+        <p className="font-data text-xs mb-1">
+          <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5" style={{ background: '#e8963e' }} />
+          Assets: <span className="font-semibold text-accent">Rs {formatCrore(assets.value)}</span>
+        </p>
+      )}
+      {liabilities && liabilities.value > 0 && (
+        <p className="font-data text-xs mb-1">
+          <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5" style={{ background: '#ef4444' }} />
+          Liabilities: <span className="font-semibold text-status-danger">Rs {formatCrore(liabilities.value)}</span>
+        </p>
+      )}
+      {growth !== undefined && growth.value !== null && (
+        <p className="font-data text-xs text-text-tertiary mt-1.5 pt-1.5 border-t border-surface-border">
+          Growth from base: <span className={`font-semibold ${growth.value > 0 ? 'text-status-clean' : 'text-status-danger'}`}>
+            {growth.value > 0 ? '+' : ''}{Number(growth.value).toFixed(1)}%
+          </span>
+        </p>
+      )}
+    </div>
+  );
 };
 
 export const AssetGrowthChart: React.FC<AssetGrowthChartProps> = ({ data }) => {
@@ -85,73 +106,114 @@ export const AssetGrowthChart: React.FC<AssetGrowthChartProps> = ({ data }) => {
     );
   }
 
-  const baseYearData = data[0];
-  const baseAssets = baseYearData.totalAssets;
-
-  const chartData = data.map((d) => {
-    const politicianGrowth = baseAssets > 0 ? ((d.totalAssets - baseAssets) / baseAssets) * 100 : 0;
-    const indexGrowth = d.indexGrowthPercentage ?? politicianGrowth * 0.6;
-
-    return {
-      year: d.year,
-      politicianGrowth: parseFloat(politicianGrowth.toFixed(2)),
-      indexGrowth: parseFloat(indexGrowth.toFixed(2)),
-      baseYear: baseYearData.year,
-      rawAssets: d.totalAssets,
-    };
-  });
-
-  const yAxisFormatter = (value: number) => `${value}%`;
-
-  const latestAssets = data[data.length - 1].totalAssets;
+  const sorted = [...data].sort((a, b) => a.year - b.year);
+  const baseAssets = sorted[0].totalAssets;
+  const latestAssets = sorted[sorted.length - 1].totalAssets;
   const totalGrowth = baseAssets > 0 ? ((latestAssets - baseAssets) / baseAssets) * 100 : 0;
+  const hasLiabilities = sorted.some(d => d.liabilities > 0);
+  const yearSpan = sorted[sorted.length - 1].year - sorted[0].year;
+
+  const chartData = sorted.map((d) => ({
+    year: d.year.toString(),
+    totalAssets: d.totalAssets,
+    liabilities: d.liabilities,
+    growthPct: baseAssets > 0 ? parseFloat((((d.totalAssets - baseAssets) / baseAssets) * 100).toFixed(1)) : null,
+  }));
 
   return (
     <div className="bg-surface-secondary border border-surface-border p-5 rounded-card">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-text-primary">Comparative Asset Growth</h3>
+          <h3 className="text-lg font-semibold text-text-primary">Asset & Liability Growth</h3>
           <p className="text-xs text-text-tertiary mt-0.5">
-            {data.length} declarations from {data[0].year} to {data[data.length - 1].year}
-            <span className={`ml-2 font-semibold font-data ${totalGrowth > 100 ? 'text-status-danger' : 'text-status-clean'}`}>
-              ({totalGrowth > 0 ? '+' : ''}{totalGrowth.toFixed(1)}%)
-            </span>
+            {sorted.length} declarations over {yearSpan} years ({sorted[0].year} - {sorted[sorted.length - 1].year})
           </p>
         </div>
-        <SourceLink url={data[data.length - 1].sourceUrl} />
+        <SourceLink url={sorted[sorted.length - 1].sourceUrl} />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mb-5">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-5">
         <div className="bg-surface-primary p-3 rounded-lg border border-surface-border">
-          <p className="text-xs text-text-tertiary">Base ({data[0].year})</p>
-          <p className="text-base font-bold text-text-primary font-data">Rs {formatCrore(data[0].totalAssets)}</p>
+          <p className="text-xs text-text-tertiary">Base ({sorted[0].year})</p>
+          <p className="text-sm font-bold text-text-primary font-data">Rs {formatCrore(sorted[0].totalAssets)}</p>
         </div>
         <div className="bg-surface-primary p-3 rounded-lg border border-surface-border">
-          <p className="text-xs text-text-tertiary">Latest ({data[data.length - 1].year})</p>
-          <p className="text-base font-bold text-accent font-data">Rs {formatCrore(latestAssets)}</p>
+          <p className="text-xs text-text-tertiary">Latest ({sorted[sorted.length - 1].year})</p>
+          <p className="text-sm font-bold text-accent font-data">Rs {formatCrore(latestAssets)}</p>
         </div>
-        <div className="bg-surface-primary p-3 rounded-lg border border-surface-border hidden sm:block">
+        <div className="bg-surface-primary p-3 rounded-lg border border-surface-border">
+          <p className="text-xs text-text-tertiary">Total Growth</p>
+          <p className={`text-sm font-bold font-data ${totalGrowth > 100 ? 'text-status-danger' : totalGrowth > 0 ? 'text-status-clean' : 'text-text-primary'}`}>
+            {totalGrowth > 0 ? '+' : ''}{totalGrowth.toFixed(1)}%
+          </p>
+        </div>
+        <div className="bg-surface-primary p-3 rounded-lg border border-surface-border">
           <p className="text-xs text-text-tertiary">Net Liabilities</p>
-          <p className="text-base font-bold text-text-primary font-data">
-            {data[data.length - 1].liabilities > 0 ? `Rs ${formatCrore(data[data.length - 1].liabilities)}` : 'Nil'}
+          <p className="text-sm font-bold text-text-primary font-data">
+            {sorted[sorted.length - 1].liabilities > 0 ? `Rs ${formatCrore(sorted[sorted.length - 1].liabilities)}` : 'Nil'}
           </p>
         </div>
       </div>
 
-      <div style={{ width: '100%', height: 280 }}>
+      {/* Chart */}
+      <div style={{ width: '100%', height: 320 }}>
         <ResponsiveContainer>
-          <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a3140" strokeOpacity={0.5} />
-            <XAxis dataKey="year" stroke="#64748b" type="number" domain={['dataMin', 'dataMax']} tickCount={chartData.length} fontSize={12} />
-            <YAxis tickFormatter={yAxisFormatter} stroke="#64748b" width={50} fontSize={12} />
+            <XAxis dataKey="year" stroke="#64748b" fontSize={12} />
+            <YAxis
+              yAxisId="amount"
+              tickFormatter={formatYAxisCrore}
+              stroke="#64748b"
+              width={55}
+              fontSize={11}
+            />
+            <YAxis
+              yAxisId="pct"
+              orientation="right"
+              tickFormatter={(v: number) => `${v}%`}
+              stroke="#64748b"
+              width={45}
+              fontSize={11}
+            />
             <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ color: '#94a3b8', fontSize: '12px' }} />
-            <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
-            <Line type="monotone" dataKey="politicianGrowth" name="Politician Assets" stroke="#e8963e" strokeWidth={2.5} dot={{ r: 4, fill: '#e8963e' }} activeDot={{ r: 6 }} />
-            <Line type="monotone" dataKey="indexGrowth" name="Market Index" stroke="#64748b" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
-          </LineChart>
+            <Legend wrapperStyle={{ fontSize: '11px', color: '#94a3b8' }} />
+            <Bar
+              yAxisId="amount"
+              dataKey="totalAssets"
+              name="Total Assets"
+              fill="#e8963e"
+              radius={[4, 4, 0, 0]}
+              barSize={sorted.length <= 4 ? 40 : 28}
+            />
+            {hasLiabilities && (
+              <Bar
+                yAxisId="amount"
+                dataKey="liabilities"
+                name="Liabilities"
+                fill="#ef4444"
+                radius={[4, 4, 0, 0]}
+                barSize={sorted.length <= 4 ? 40 : 28}
+              />
+            )}
+            <Line
+              yAxisId="pct"
+              type="monotone"
+              dataKey="growthPct"
+              name="Growth %"
+              stroke="#22d3ee"
+              strokeWidth={2}
+              dot={{ r: 4, fill: '#22d3ee' }}
+              activeDot={{ r: 6 }}
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      <p className="text-xs text-text-tertiary mt-3">
+        Data sourced from self-declared affidavits filed with the Election Commission of India via myneta.info.
+      </p>
     </div>
   );
 };

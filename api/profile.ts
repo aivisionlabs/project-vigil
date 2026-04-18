@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as cheerio from 'cheerio';
 import { aiExtractProfile, aiExtractAssets } from './lib/aiExtractor';
+import { fetchPrsPerformance } from './lib/prsScraper';
 
 const MYNETA_BASE = 'https://www.myneta.info';
 
@@ -29,6 +30,22 @@ interface ScrapedProfile {
     selfProfession: string;
     spouseProfession: string;
     panGiven: string;
+  };
+  itrIncome?: Array<{
+    financialYear: string;
+    selfIncome: number;
+    spouseIncome: number;
+    hufIncome: number;
+    totalIncome: number;
+  }>;
+  parliamentaryPerformance?: {
+    attendance: { percentage: number; nationalAverage: number; stateAverage: number } | null;
+    questionsAsked: number | null;
+    debatesParticipated: number | null;
+    billsIntroduced: number | null;
+    questions: Array<{ date: string; title: string; type: string; ministry: string; documentUrl?: string }>;
+    term: string;
+    sourceUrl: string;
   };
 }
 
@@ -64,8 +81,102 @@ function extractPhotoUrl($: cheerio.CheerioAPI, name: string): string {
 // ─── Extract election year from URL ──────────────────────────────────────────
 
 function extractElectionYear(profileUrl: string): number {
-  const yearMatch = profileUrl.match(/(?:LokSabha|Bihar|Delhi|UP|Gujarat|Maharashtra|Karnataka|Rajasthan|MP|Telangana|Chhattisgarh|Jharkhand|Haryana|Punjab)(\d{4})/i);
+  // Match any slug followed by a 4-digit year (covers all states + Lok Sabha)
+  const yearMatch = profileUrl.match(/myneta\.info\/\w+?(\d{4})\//i);
   return yearMatch ? parseInt(yearMatch[1], 10) : new Date().getFullYear();
+}
+
+// ─── Extract assets from "Other Elections" / "Declared Assets" HTML table ────
+
+function extractDeclaredAssetsTable($: cheerio.CheerioAPI): Array<{
+  year: number;
+  totalAssets: number;
+  sourceUrl: string;
+  election: string;
+}> {
+  const results: Array<{ year: number; totalAssets: number; sourceUrl: string; election: string }> = [];
+
+  $('table').each((_i, table) => {
+    const headerText = $(table).find('th').first().text();
+    const tableText = $(table).text();
+    if (!tableText.includes('Declared Assets') && !headerText.includes('Other Elections')) return;
+
+    $(table).find('tr').each((_j, row) => {
+      const cells = $(row).find('td');
+      if (cells.length < 2) return;
+
+      const electionText = $(cells[0]).text().trim();
+      const assetText = $(cells[1]).text().trim();
+
+      const yearMatch = electionText.match(/(\d{4})/);
+      if (!yearMatch) return;
+      const year = parseInt(yearMatch[1], 10);
+
+      const rsMatch = assetText.match(/Rs\.?\s*([\d,]+)/i);
+      if (!rsMatch) return;
+
+      const totalAssets = parseIndianCurrency(rsMatch[0]);
+      if (totalAssets > 0) {
+        results.push({ year, totalAssets, sourceUrl: '', election: electionText });
+      }
+    });
+  });
+
+  return results;
+}
+
+// ─── Extract ITR income data from HTML table ────────────────────────────────
+
+function extractItrIncome($: cheerio.CheerioAPI): ScrapedProfile['itrIncome'] {
+  let itrTable = $('table#income_tax');
+  if (!itrTable.length) {
+    $('table').each((_i, t) => {
+      if ($(t).text().includes('Total Income Shown in ITR')) {
+        itrTable = $(t);
+        return false;
+      }
+    });
+  }
+  if (!itrTable.length) return undefined;
+
+  const byYear: Record<string, { self: number; spouse: number; huf: number }> = {};
+
+  itrTable.find('tr').each((_i, row) => {
+    const cells = $(row).find('td');
+    if (cells.length < 4) return;
+
+    const relation = $(cells[0]).text().trim().toLowerCase();
+    if (!['self', 'spouse', 'huf'].includes(relation)) return;
+
+    const cellHtml = $(cells[3]).html() || '';
+    const entries = cellHtml.split(/<br\s*\/?>/gi);
+
+    for (const entry of entries) {
+      const yearMatch = entry.match(/(\d{4})\s*-\s*(\d{4})/);
+      const amountMatch = entry.match(/Rs(?:&nbsp;|\s)*([\d,]+)/i);
+      if (!yearMatch || !amountMatch) continue;
+
+      const fy = `${yearMatch[1]}-${yearMatch[2]}`;
+      const amount = parseInt(amountMatch[1].replace(/,/g, ''), 10);
+      if (isNaN(amount) || amount <= 0) continue;
+
+      if (!byYear[fy]) byYear[fy] = { self: 0, spouse: 0, huf: 0 };
+      if (relation === 'self') byYear[fy].self = amount;
+      else if (relation === 'spouse') byYear[fy].spouse = amount;
+      else if (relation === 'huf') byYear[fy].huf = amount;
+    }
+  });
+
+  const years = Object.keys(byYear).sort();
+  if (years.length === 0) return undefined;
+
+  return years.map(fy => ({
+    financialYear: fy,
+    selfIncome: byYear[fy].self,
+    spouseIncome: byYear[fy].spouse,
+    hufIncome: byYear[fy].huf,
+    totalIncome: byYear[fy].self + byYear[fy].spouse + byYear[fy].huf,
+  }));
 }
 
 // ─── Regex fallback extraction (original logic) ─────────────────────────────
@@ -106,12 +217,12 @@ function regexFallbackExtract($: cheerio.CheerioAPI, bodyText: string, profileUr
   let totalAssets = 0;
   let totalLiabilities = 0;
 
-  const assetMatches = bodyText.match(/Total\s*Assets\s*[:\s]*Rs\s*([\d,]+)/gi);
+  const assetMatches = bodyText.match(/Total\s*Assets\s*[:\s]*Rs\.?\s*([\d,]+)/gi);
   if (assetMatches && assetMatches.length > 0) {
     totalAssets = parseIndianCurrency(assetMatches[assetMatches.length - 1].replace(/Total\s*Assets\s*[:\s]*/i, ''));
   } else {
-    const movableMatch = bodyText.match(/(?:Totals?\s*(?:of\s*)?Movable\s*Assets?)\s*[:\s]*Rs\s*([\d,]+)/i);
-    const immovableMatch = bodyText.match(/(?:Totals?\s*(?:of\s*)?Immovable\s*Assets?)\s*[:\s]*Rs\s*([\d,]+)/i);
+    const movableMatch = bodyText.match(/(?:Totals?\s*(?:of\s*)?Movable\s*Assets?)\s*[:\s]*Rs\.?\s*([\d,]+)/i);
+    const immovableMatch = bodyText.match(/(?:Totals?\s*(?:of\s*)?Immovable\s*Assets?)\s*[:\s]*Rs\.?\s*([\d,]+)/i);
     if (movableMatch) totalAssets += parseIndianCurrency(movableMatch[1]);
     if (immovableMatch) totalAssets += parseIndianCurrency(immovableMatch[1]);
   }
@@ -188,12 +299,18 @@ async function scrapeProfile(profileUrl: string): Promise<ScrapedProfile | null>
     const $ = cheerio.load(html);
     const bodyText = $('body').text();
 
+    // Always extract from plain HTML tables (not behind JS)
+    const tableAssets = extractDeclaredAssetsTable($);
+    const itrIncome = extractItrIncome($);
+
     // Try AI extraction first
     const aiResult = await aiExtractProfile(bodyText);
 
+    let profile: ScrapedProfile;
+
     if (aiResult && aiResult.name && aiResult.name !== 'Unknown') {
       const electionYear = extractElectionYear(profileUrl);
-      const assetDeclarations = [];
+      const assetDeclarations: ScrapedProfile['assetDeclarations'] = [];
       if (aiResult.totalAssets > 0 || aiResult.totalLiabilities > 0) {
         assetDeclarations.push({
           year: electionYear,
@@ -203,7 +320,7 @@ async function scrapeProfile(profileUrl: string): Promise<ScrapedProfile | null>
         });
       }
 
-      return {
+      profile = {
         name: aiResult.name,
         party: aiResult.party || 'Independent',
         constituency: aiResult.constituency || 'Not available',
@@ -223,11 +340,35 @@ async function scrapeProfile(profileUrl: string): Promise<ScrapedProfile | null>
           panGiven: aiResult.panGiven || '',
         },
       };
+    } else {
+      // Fallback to regex extraction
+      console.warn('AI extraction failed or returned empty, using regex fallback');
+      profile = regexFallbackExtract($, bodyText, profileUrl);
     }
 
-    // Fallback to regex extraction
-    console.warn('AI extraction failed or returned empty, using regex fallback');
-    return regexFallbackExtract($, bodyText, profileUrl);
+    // Merge "Declared Assets" table data into assetDeclarations
+    if (tableAssets.length > 0) {
+      const existingYears = new Set(profile.assetDeclarations.map(a => a.year));
+      for (const ta of tableAssets) {
+        if (!existingYears.has(ta.year)) {
+          profile.assetDeclarations.push({
+            year: ta.year,
+            totalAssets: ta.totalAssets,
+            liabilities: 0,
+            sourceUrl: profileUrl,
+          });
+          existingYears.add(ta.year);
+        }
+      }
+      profile.assetDeclarations.sort((a, b) => a.year - b.year);
+    }
+
+    // Attach ITR income data
+    if (itrIncome && itrIncome.length > 0) {
+      profile.itrIncome = itrIncome;
+    }
+
+    return profile;
   } catch (err) {
     console.error('Profile scrape error:', err instanceof Error ? err.message : err);
     return null;
@@ -359,15 +500,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (includeHistory && profile.name) {
-      const historicalData = await findHistoricalData(profile.name, url);
+    // Run historical data + PRS performance fetch in parallel
+    const [historicalResult, prsResult] = await Promise.allSettled([
+      includeHistory && profile.name && profile.assetDeclarations.length < 2
+        ? findHistoricalData(profile.name, url)
+        : Promise.resolve([]),
+      fetchPrsPerformance(profile.name, profile.constituency),
+    ]);
+
+    // Merge historical asset data
+    if (historicalResult.status === 'fulfilled' && historicalResult.value.length > 0) {
       const existingYears = new Set(profile.assetDeclarations.map(a => a.year));
-      for (const h of historicalData) {
+      for (const h of historicalResult.value) {
         if (!existingYears.has(h.year)) {
           profile.assetDeclarations.push(h);
         }
       }
       profile.assetDeclarations.sort((a, b) => a.year - b.year);
+    }
+
+    // Attach PRS parliamentary performance data
+    if (prsResult.status === 'fulfilled' && prsResult.value) {
+      const prs = prsResult.value;
+      profile.parliamentaryPerformance = {
+        attendance: prs.attendance,
+        questionsAsked: prs.questionsAsked,
+        debatesParticipated: prs.debatesParticipated,
+        billsIntroduced: prs.billsIntroduced,
+        questions: prs.questions,
+        term: prs.term,
+        sourceUrl: prs.sourceUrl,
+      };
     }
 
     return res.status(200).json({
@@ -377,6 +540,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fetchedAt: new Date().toISOString(),
         dataComplete: profile.assetDeclarations.length > 0,
         hasCriminalCases: profile.criminalCases.length > 0,
+        hasPrsData: !!profile.parliamentaryPerformance,
         extractionMethod: process.env.ANTHROPIC_API_KEY ? 'ai' : 'regex',
       },
     });

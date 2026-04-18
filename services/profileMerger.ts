@@ -2,7 +2,7 @@
  * Profile merge & mapping utilities.
  * Pure functions — no side effects, no network calls. Fully testable.
  */
-import type { PoliticianProfileData } from '../types';
+import type { PoliticianProfileData, ItrIncome } from '../types';
 
 /**
  * Map raw API response data to our PoliticianProfileData shape.
@@ -35,7 +35,35 @@ export function mapApiProfile(apiData: any, profileUrl: string): PoliticianProfi
           sourceUrl: c.sourceUrl || profileUrl,
         }))
       : [],
+    itrIncome: Array.isArray(apiData?.itrIncome)
+      ? apiData.itrIncome.map((i: any) => ({
+          financialYear: i.financialYear || '',
+          selfIncome: i.selfIncome ?? 0,
+          spouseIncome: i.spouseIncome ?? 0,
+          hufIncome: i.hufIncome ?? 0,
+          totalIncome: i.totalIncome ?? 0,
+        }))
+      : undefined,
     additionalInfo: apiData?.additionalInfo,
+    parliamentaryPerformance: apiData?.parliamentaryPerformance
+      ? {
+          attendance: apiData.parliamentaryPerformance.attendance ?? null,
+          questionsAsked: apiData.parliamentaryPerformance.questionsAsked ?? null,
+          debatesParticipated: apiData.parliamentaryPerformance.debatesParticipated ?? null,
+          billsIntroduced: apiData.parliamentaryPerformance.billsIntroduced ?? null,
+          questions: Array.isArray(apiData.parliamentaryPerformance.questions)
+            ? apiData.parliamentaryPerformance.questions.map((q: any) => ({
+                date: q.date || '',
+                title: q.title || '',
+                type: q.type || '',
+                ministry: q.ministry || '',
+                documentUrl: q.documentUrl || undefined,
+              }))
+            : undefined,
+          term: apiData.parliamentaryPerformance.term || '18th Lok Sabha',
+          sourceUrl: apiData.parliamentaryPerformance.sourceUrl || '',
+        }
+      : undefined,
   };
 }
 

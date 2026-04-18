@@ -10,11 +10,19 @@ interface ProfileHeaderProps {
   age?: string;
   state?: string;
   profileUrl?: string;
-  wikipediaUrl?: string;
+  election?: string; // e.g. "Lok Sabha 2024" or "Assam 2021"
+}
+
+function getHouseLabel(election?: string): { label: string; type: 'lok-sabha' | 'state-assembly' | 'rajya-sabha' } | null {
+  if (!election) return null;
+  const lower = election.toLowerCase();
+  if (lower.includes('lok sabha')) return { label: `Lok Sabha MP`, type: 'lok-sabha' };
+  if (lower.includes('rajya sabha')) return { label: `Rajya Sabha MP`, type: 'rajya-sabha' };
+  return { label: `MLA`, type: 'state-assembly' };
 }
 
 export const ProfileHeader: React.FC<ProfileHeaderProps> = ({
-  name, photoUrl, party, constituency, education, age, state, profileUrl, wikipediaUrl,
+  name, photoUrl, party, constituency, education, age, state, profileUrl, election,
 }) => {
   const [imgError, setImgError] = useState(false);
 
@@ -33,7 +41,23 @@ export const ProfileHeader: React.FC<ProfileHeaderProps> = ({
         </div>
         <div className="flex-1 text-center md:text-left">
           <h2 className="text-2xl font-bold text-text-primary">{name}</h2>
-          <p className="text-sm text-accent mt-1 font-medium">{party}</p>
+          <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mt-1">
+            <span className="text-sm text-accent font-medium">{party}</span>
+            {(() => {
+              const house = getHouseLabel(election);
+              if (!house) return null;
+              const colors = house.type === 'lok-sabha'
+                ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                : house.type === 'rajya-sabha'
+                ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
+                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+              return (
+                <span className={`text-xs px-2 py-0.5 rounded-badge border font-medium ${colors}`}>
+                  {house.label}
+                </span>
+              );
+            })()}
+          </div>
           <div className="flex flex-wrap justify-center md:justify-start gap-x-4 gap-y-1 mt-2.5 text-text-secondary text-sm">
             <span className="flex items-center gap-1.5">
               <svg className="w-3.5 h-3.5 text-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -64,17 +88,6 @@ export const ProfileHeader: React.FC<ProfileHeaderProps> = ({
           )}
         </div>
         <div className="flex flex-col gap-2">
-          {wikipediaUrl && (
-            <a
-              href={wikipediaUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-accent transition-colors bg-surface-primary/60 px-3 py-1.5 rounded-badge border border-surface-border"
-              title="View on Wikipedia"
-            >
-              Wikipedia <ExternalLinkIcon className="w-3 h-3" />
-            </a>
-          )}
           {profileUrl && (
             <a
               href={profileUrl}
