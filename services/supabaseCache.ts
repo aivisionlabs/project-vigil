@@ -25,7 +25,7 @@ export async function getCachedRemoteProfile(
       .from('politician_profiles')
       .select('profile_data, cached_at')
       .eq('profile_url', profileUrl)
-      .single();
+      .maybeSingle();
 
     if (error || !data) return null;
 
@@ -78,7 +78,7 @@ export async function getCachedSearchResults(
       .from('search_cache')
       .select('results, cached_at')
       .eq('query', normalizedQuery)
-      .single();
+      .maybeSingle();
 
     if (error || !data) return null;
 

@@ -17,6 +17,10 @@
       "destination": "/api/prs"
     },
     {
+      "source": "/api/og",
+      "destination": "/api/og"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/scrape"
     },

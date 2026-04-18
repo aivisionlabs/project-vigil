@@ -53,26 +53,11 @@ const Logo: React.FC<{ onClick: () => void }> = ({ onClick }) => (
     onClick={onClick}
     className="flex items-center justify-center gap-3 mx-auto group cursor-pointer"
   >
-    <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center">
-      <svg
-        className="w-5 h-5 text-text-inverse"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2.5}
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-        />
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-        />
-      </svg>
-    </div>
+    <img
+      src="/project-vigil.png"
+      alt="Project Vigil"
+      className="h-10 w-auto"
+    />
     <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-text-primary group-hover:text-accent transition-colors">
       PROJECT <span className="text-accent">VIGIL</span>
     </h1>
@@ -578,6 +563,53 @@ const ProfilePage: React.FC<{
   const [resolveError, setResolveError] = useState(false);
 
   const displayName = slugToName(slug);
+
+  // Update OG meta tags for this politician
+  useEffect(() => {
+    const title = `${politician?.name || displayName} — Project Vigil`;
+    const description = politician
+      ? `View ${politician.name}'s assets, criminal cases, and parliamentary record. ${politician.party} — ${politician.constituency}.`
+      : `View ${displayName}'s profile on Project Vigil.`;
+    const ogImageUrl = `/api/og?name=${encodeURIComponent(politician?.name || displayName)}${politician?.party ? `&party=${encodeURIComponent(politician.party)}` : ''}${politician?.constituency ? `&constituency=${encodeURIComponent(politician.constituency)}` : ''}${politician?.totalAssets ? `&assets=${encodeURIComponent(politician.totalAssets)}` : ''}`;
+
+    document.title = title;
+
+    const setMeta = (property: string, content: string) => {
+      const selector = property.startsWith('og:')
+        ? `meta[property="${property}"]`
+        : `meta[name="${property}"]`;
+      let el = document.querySelector(selector) as HTMLMetaElement | null;
+      if (!el) {
+        el = document.createElement('meta');
+        if (property.startsWith('og:')) {
+          el.setAttribute('property', property);
+        } else {
+          el.setAttribute('name', property);
+        }
+        document.head.appendChild(el);
+      }
+      el.setAttribute('content', content);
+    };
+
+    setMeta('og:title', title);
+    setMeta('og:description', description);
+    setMeta('og:image', ogImageUrl);
+    setMeta('og:type', 'profile');
+    setMeta('twitter:title', title);
+    setMeta('twitter:description', description);
+    setMeta('twitter:image', ogImageUrl);
+
+    return () => {
+      document.title = 'PROJECT VIGIL — Transparent Governance Dashboard';
+      setMeta('og:title', 'PROJECT VIGIL — Transparent Governance Dashboard');
+      setMeta('og:description', 'Track assets, criminal cases, and parliamentary performance of Indian politicians. Data from public election affidavits.');
+      setMeta('og:image', '/project-vigil.png');
+      setMeta('og:type', 'website');
+      setMeta('twitter:title', 'PROJECT VIGIL — Transparent Governance Dashboard');
+      setMeta('twitter:description', 'Track assets, criminal cases, and parliamentary performance of Indian politicians. Data from public election affidavits.');
+      setMeta('twitter:image', '/project-vigil.png');
+    };
+  }, [politician, displayName]);
 
   // Resolve slug to politician data
   useEffect(() => {
