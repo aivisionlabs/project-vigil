@@ -1,22 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { getPoliticianProfile, getAssociatedReports } from '../services/api';
-import type { PoliticianProfileData, AssociatedReport, DataMeta } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { getPoliticianProfile } from '../services/api';
+import { fetchLiveProfile, fetchLivePrs } from '../services/liveFetcher';
+import { mapApiProfile } from '../services/profileMerger';
+import { cacheRemoteProfile } from '../services/supabaseCache';
+import type { PoliticianProfileData, ParliamentaryPerformance as PerfData, DataMeta } from '../types';
 import { ProfileHeader } from './ProfileHeader';
 import { AssetGrowthChart } from './AssetGrowthChart';
 import { CriminalCasesTable } from './CriminalCasesTable';
-import { AssociatedReportsList } from './AssociatedReportsList';
 import { RtiHelper } from './RtiHelper';
 import { WikipediaSummary } from './WikipediaSummary';
 import { PersonalDetails } from './PersonalDetails';
 import { DataBadge } from './DataBadge';
 import { GovtDownBanner } from './GovtDownBanner';
+import { ParliamentaryPerformance } from './ParliamentaryPerformance';
 
 interface PoliticianProfileProps {
   profileUrl: string;
   politicianName: string;
   politicianParty: string;
   politicianConstituency: string;
-  isCached?: boolean;
 }
 
 const ProfileSkeleton: React.FC = () => (
@@ -101,20 +103,46 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
   politicianName,
   politicianParty,
   politicianConstituency,
-  isCached = false,
 }) => {
   const [profile, setProfile] = useState<PoliticianProfileData | null>(null);
-  const [reports, setReports] = useState<AssociatedReport[]>([]);
   const [profileMeta, setProfileMeta] = useState<DataMeta | null>(null);
-  const [reportsMeta, setReportsMeta] = useState<DataMeta | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
 
   const [profileLoading, setProfileLoading] = useState(true);
-  const [reportsLoading, setReportsLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
-  const [reportsError, setReportsError] = useState<string | null>(null);
+  const [isScraping, setIsScraping] = useState(false);
+  const [scrapeError, setScrapeError] = useState<string | null>(null);
+
+  const [prsData, setPrsData] = useState<PerfData | null>(null);
+  const [prsLoading, setPrsLoading] = useState(true);
 
   const [loadStartTime] = useState(Date.now());
+  const [scrapeStartTime, setScrapeStartTime] = useState<number | null>(null);
+
+  // Fetch PRS parliamentary performance data
+  useEffect(() => {
+    const fetchPrs = async () => {
+      try {
+        setPrsLoading(true);
+        const result = await fetchLivePrs(politicianName, politicianConstituency);
+        if (result.performance) {
+          setPrsData({
+            attendance: result.performance.attendance,
+            questionsAsked: result.performance.questionsAsked,
+            debatesParticipated: result.performance.debatesParticipated,
+            billsIntroduced: result.performance.billsIntroduced,
+            term: result.performance.term,
+            sourceUrl: result.performance.sourceUrl,
+          });
+        }
+      } catch {
+        // PRS data is supplementary — don't show errors
+      } finally {
+        setPrsLoading(false);
+      }
+    };
+    fetchPrs();
+  }, [politicianName, politicianConstituency]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -122,7 +150,7 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
         setProfileLoading(true);
         setProfileError(null);
         setWarnings([]);
-        const result = await getPoliticianProfile(profileUrl, isCached);
+        const result = await getPoliticianProfile(profileUrl);
         setProfile(result.profile);
         setProfileMeta(result.meta);
         setWarnings(result.warnings);
@@ -133,35 +161,47 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
       }
     };
     fetchProfile();
-  }, [profileUrl, isCached]);
+  }, [profileUrl]);
 
-  useEffect(() => {
-    const fetchReports = async () => {
-      try {
-        setReportsLoading(true);
-        setReportsError(null);
-        const result = await getAssociatedReports(
-          politicianName,
-          politicianParty,
-          politicianConstituency,
-        );
-        setReports(result.reports);
-        setReportsMeta(result.meta);
-      } catch (err) {
-        setReportsError(err instanceof Error ? err.message : 'Failed to load reports.');
-      } finally {
-        setReportsLoading(false);
+  // Trigger on-demand scrape from myneta.info
+  const handleScrapeProfile = useCallback(async () => {
+    setIsScraping(true);
+    setScrapeError(null);
+    setScrapeStartTime(Date.now());
+
+    try {
+      const data = await fetchLiveProfile(profileUrl, true, 55_000);
+
+      if (data.profile) {
+        const scraped = mapApiProfile(data.profile, profileUrl);
+        setProfile(scraped);
+        setProfileMeta({ source: 'live', fetchedAt: data.meta?.fetchedAt });
+        setWarnings([]);
+
+        // Cache to Supabase in background
+        cacheRemoteProfile(profileUrl, scraped);
+      } else {
+        setScrapeError('Scraper could not extract data from this page. The politician may not have a detailed affidavit on myneta.info.');
       }
-    };
-    fetchReports();
-  }, [politicianName, politicianParty, politicianConstituency]);
+    } catch (err) {
+      console.error('Scrape failed:', err);
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('vercel dev') || msg.includes('API not available')) {
+        setScrapeError('Scraping API is not available in dev mode. Run "vercel dev" to enable live scraping, or deploy to Vercel.');
+      } else if (msg.includes('timeout')) {
+        setScrapeError('Scraping timed out. myneta.info may be slow — try again in a moment.');
+      } else {
+        setScrapeError('Failed to scrape profile. Please try again.');
+      }
+    } finally {
+      setIsScraping(false);
+      setScrapeStartTime(null);
+    }
+  }, [profileUrl]);
 
-  const allLoading = profileLoading && reportsLoading;
+  const allLoading = profileLoading;
 
   const allWarnings = [...warnings];
-  if (reportsError) {
-    allWarnings.push('AI-generated audit report could not be loaded.');
-  }
 
   // If live fetch failed and no cached profile, build a minimal profile from props
   // so the page still renders useful content (Wikipedia, reports, etc.)
@@ -179,7 +219,6 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
   );
 
   if (!profileLoading && !displayProfile) {
-    // This should never happen now, but keep as safety net
     return (
       <div className="space-y-5 animate-fade-in">
         <GovtDownBanner warnings={['Could not load profile from any source.']} />
@@ -192,7 +231,7 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
 
   return (
     <div className="space-y-5 animate-fade-in">
-      {allLoading && !isCached && <ProgressIndicator startTime={loadStartTime} />}
+      {allLoading && <ProgressIndicator startTime={loadStartTime} />}
 
       {profileMeta && !profileLoading && (
         <DataBadge meta={profileMeta} />
@@ -219,39 +258,44 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
         />
       ) : null}
 
-      {/* ── Affidavit unavailable notice ─────────────────────── */}
-      {!profileLoading && isPartialProfile && (
-        <div className="bg-surface-secondary border border-status-warning/20 p-4 rounded-card flex items-start gap-3">
-          <svg className="w-5 h-5 text-status-warning flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-          </svg>
-          <div>
-            <p className="text-sm font-medium text-text-primary">Affidavit data unavailable</p>
-            <p className="text-xs text-text-secondary mt-1">
-              Could not fetch detailed affidavit from myneta.info. Showing available information from Wikipedia and AI-generated reports.
-            </p>
-            <a
-              href={profileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-accent hover:text-accent-hover mt-1.5 inline-block"
+      {/* ── Scrape CTA for unscraped profiles ─────────────────── */}
+      {!profileLoading && isPartialProfile && !isScraping && (
+        <div className="bg-surface-secondary border border-accent/20 p-5 rounded-card animate-fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+                Detailed data not yet fetched
+              </h3>
+              <p className="text-xs text-text-secondary mt-1">
+                We'll scrape {displayProfile!.name}'s election affidavit from myneta.info — assets, criminal cases, education & more.
+              </p>
+              {scrapeError && (
+                <p className="text-xs text-status-danger mt-2">{scrapeError}</p>
+              )}
+            </div>
+            <button
+              onClick={handleScrapeProfile}
+              className="flex-shrink-0 px-5 py-2.5 bg-accent text-text-inverse font-semibold text-sm rounded-button hover:bg-accent-hover transition-colors flex items-center gap-2"
             >
-              Try viewing directly on myneta.info
-            </a>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Fetch Full Profile
+            </button>
           </div>
         </div>
       )}
 
-      {/* ── Wikipedia Summary (About section) ────────────────── */}
-      {!profileLoading && displayProfile && (
-        <WikipediaSummary
-          politicianName={displayProfile.name}
-          constituency={displayProfile.constituency}
-        />
+      {/* ── Scraping in progress ───────────────────────────────── */}
+      {isScraping && scrapeStartTime && (
+        <ProgressIndicator startTime={scrapeStartTime} />
       )}
 
       {/* ── Detailed Affidavit Info ──────────────────────────── */}
-      {profileLoading ? (
+      {(profileLoading || isScraping) ? (
         <div className="bg-surface-secondary border border-surface-border p-5 rounded-card">
           <div className="h-5 skeleton w-1/3 mb-4" />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -283,7 +327,7 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
       ) : null}
 
       {/* ── Asset Growth Chart ───────────────────────────────── */}
-      {profileLoading ? (
+      {(profileLoading || isScraping) ? (
         <ChartSkeleton />
       ) : displayProfile && hasAssetData ? (
         <AssetGrowthChart data={displayProfile.assetDeclarations} />
@@ -292,20 +336,36 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
       ) : null}
 
       {/* ── Criminal Cases ───────────────────────────────────── */}
-      {profileLoading ? (
+      {(profileLoading || isScraping) ? (
         <TableSkeleton title="criminal cases" />
       ) : displayProfile && !isPartialProfile ? (
         <CriminalCasesTable cases={displayProfile.criminalCases} />
       ) : null}
 
-      {/* ── Associated Audit Reports ─────────────────────────── */}
-      {reportsLoading ? (
-        <TableSkeleton title="audit report findings" />
-      ) : (
-        <AssociatedReportsList
-          reports={reports}
-          error={reportsError}
-          meta={reportsMeta}
+      {/* ── Parliamentary Performance (PRS India) ────────────── */}
+      {prsLoading ? (
+        <div className="bg-surface-secondary border border-surface-border p-5 rounded-card">
+          <div className="h-5 skeleton w-1/2 mb-4" />
+          <div className="space-y-3">
+            <div className="h-3 skeleton w-full" />
+            <div className="h-3 skeleton w-3/4" />
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-20 skeleton rounded-lg" />
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-text-tertiary/40 mt-3">Checking parliamentary performance on PRS India...</p>
+        </div>
+      ) : prsData ? (
+        <ParliamentaryPerformance data={prsData} />
+      ) : null}
+
+      {/* ── Wikipedia Summary ────────────────────────────────── */}
+      {!profileLoading && displayProfile && (
+        <WikipediaSummary
+          politicianName={displayProfile.name}
+          constituency={displayProfile.constituency}
         />
       )}
     </div>

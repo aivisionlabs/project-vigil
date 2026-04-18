@@ -8,13 +8,15 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "seed": "tsx scripts/seed-supabase.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
     "@google/genai": "^1.27.0",
     "@supabase/supabase-js": "^2.76.1",
     "cheerio": "^1.0.0",
+    "fuse.js": "^7.3.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^3.3.0"
@@ -26,6 +28,7 @@
     "@vercel/node": "^5.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^25.0.1",
+    "tsx": "^4.19.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^4.1.4"

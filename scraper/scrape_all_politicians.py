@@ -107,11 +107,16 @@ def scrape_winners(slug: str, state: str, election_type: str) -> list[dict]:
             if "candidate" not in href.lower():
                 continue
 
-            # Build full profile URL
+            # Build full profile URL — always prefix with election slug
+            # myneta uses /candidate.php?candidate_id=X but same IDs across elections
+            # so we need the election-specific path like /LokSabha2024/candidate.php?candidate_id=X
             if href.startswith("http"):
                 profile_url = href
-            elif href.startswith("/"):
+            elif href.startswith(f"/{slug}/"):
                 profile_url = f"{BASE_URL}{href}"
+            elif href.startswith("/"):
+                # Bare /candidate.php — prepend election slug
+                profile_url = f"{BASE_URL}/{slug}{href}"
             else:
                 profile_url = f"{BASE_URL}/{slug}/{href}"
 
@@ -204,8 +209,7 @@ def main():
     print(f"After dedup: {unique_count} unique entries" if (unique_count := len(unique)) else "")
 
     # Save to JSON
-    output_path = os.path.join(os.path.dirname(__file__), "..", "src", "data", "politician_index.json")
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_path = os.path.join(os.path.dirname(__file__), "..", "data", "politician_index.json")
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(unique, f, ensure_ascii=False, indent=2)

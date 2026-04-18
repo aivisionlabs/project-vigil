@@ -4,7 +4,8 @@ import { PoliticianProfile } from "./components/PoliticianProfile";
 import { DisclaimerModal } from "./components/DisclaimerModal";
 import { DataBadge } from "./components/DataBadge";
 import { ComingSoonSection } from "./components/ComingSoonSection";
-import { searchPoliticians, hasCachedProfile } from "./services/api";
+import { RequestPolitician } from "./components/RequestPolitician";
+import { searchPoliticians } from "./services/api";
 import type { PoliticianSummary, DataMeta } from "./types";
 
 // ─── Simple slug helpers ─────────────────────────────────────────────────────
@@ -42,12 +43,13 @@ const App: React.FC = () => {
     name: string;
     party: string;
     constituency: string;
-    isCached: boolean;
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMeta, setSearchMeta] = useState<DataMeta | null>(null);
+  const [suggestions, setSuggestions] = useState<PoliticianSummary[]>([]);
+  const [indexCount, setIndexCount] = useState(0);
   const [showDisclaimer, setShowDisclaimer] = useState(
     !sessionStorage.getItem("disclaimerAcknowledged"),
   );
@@ -80,7 +82,6 @@ const App: React.FC = () => {
             name: match.name,
             party: match.party,
             constituency: match.constituency,
-            isCached: false,
           });
         }
       });
@@ -94,9 +95,11 @@ const App: React.FC = () => {
       try {
         setIsLoading(true);
         setError(null);
-        const { results, meta } = await searchPoliticians(searchQuery);
+        const { results, meta, suggestions: sugg, indexCount: count } = await searchPoliticians(searchQuery);
         setPoliticians(results);
         setSearchMeta(meta);
+        setSuggestions(sugg || []);
+        setIndexCount(count || 0);
       } catch (err) {
         setError(
           err instanceof Error
@@ -129,7 +132,6 @@ const App: React.FC = () => {
       name: p.name,
       party: p.party,
       constituency: p.constituency,
-      isCached: searchMeta?.source === "cache" && hasCachedProfile(p.profileUrl),
     });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -223,7 +225,6 @@ const App: React.FC = () => {
                   politicianName={selectedPolitician.name}
                   politicianParty={selectedPolitician.party}
                   politicianConstituency={selectedPolitician.constituency}
-                  isCached={selectedPolitician.isCached}
                 />
               </div>
             ) : (
@@ -231,10 +232,22 @@ const App: React.FC = () => {
                 {/* Data source indicator */}
                 {searchMeta && !isLoading && (
                   <div className="mb-4 flex items-center justify-between">
-                    <DataBadge meta={searchMeta} />
+                    {searchQuery.length < 2 ? (
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-semibold text-text-primary">Top Leaders</h2>
+                        <span className="text-[10px] font-medium text-accent bg-accent-muted px-1.5 py-0.5 rounded-badge">
+                          Lok Sabha 2024
+                        </span>
+                      </div>
+                    ) : (
+                      <DataBadge meta={searchMeta} />
+                    )}
                     <span className="text-xs text-text-tertiary font-data">
                       {politicians.length} result
                       {politicians.length !== 1 ? "s" : ""}
+                      {indexCount > 0 && searchQuery.length < 2 && (
+                        <span className="text-text-tertiary/50"> of {indexCount.toLocaleString()}</span>
+                      )}
                     </span>
                   </div>
                 )}
@@ -294,110 +307,218 @@ const App: React.FC = () => {
                 {/* Results */}
                 {!isLoading && !error && (
                   <div className="space-y-2.5">
-                    {politicians.map((p) => (
-                      <button
-                        key={p.profileUrl}
-                        onClick={() => handleSelectPolitician(p)}
-                        className="w-full text-left bg-surface-secondary border border-surface-border p-4 rounded-card card-hover focus:outline-none focus:ring-2 focus:ring-accent/40 group"
-                        aria-label={`View profile for ${p.name}`}
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-11 h-11 rounded-full bg-accent-muted flex items-center justify-center flex-shrink-0 group-hover:bg-accent/20 transition-colors">
-                            <span className="text-accent font-bold text-base">
-                              {p.name.charAt(0)}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-base font-semibold text-text-primary group-hover:text-accent transition-colors truncate">
-                              {p.name}
-                            </h3>
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
-                              <span className="text-sm text-accent/80">
-                                {p.party}
+                    {politicians.map((p) => {
+                      const hasRichData = p.criminalCases !== undefined || p.totalAssets;
+                      const isLinkOnly = !hasRichData && p.profileUrl;
+
+                      return (
+                        <button
+                          key={p.profileUrl}
+                          onClick={() => handleSelectPolitician(p)}
+                          className={`w-full text-left bg-surface-secondary border p-4 rounded-card card-hover focus:outline-none focus:ring-2 focus:ring-accent/40 group ${
+                            isLinkOnly ? 'border-accent/20' : 'border-surface-border'
+                          }`}
+                          aria-label={`View profile for ${p.name}`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="w-11 h-11 rounded-full bg-accent-muted flex items-center justify-center flex-shrink-0 group-hover:bg-accent/20 transition-colors">
+                              <span className="text-accent font-bold text-base">
+                                {p.name.charAt(0)}
                               </span>
-                              <span className="text-xs text-text-tertiary">
-                                {p.constituency}
-                              </span>
-                              {p.election && (
-                                <span className="text-xs bg-surface-tertiary text-text-tertiary px-2 py-0.5 rounded-badge">
-                                  {p.election}
-                                </span>
-                              )}
                             </div>
-                            {(p.criminalCases !== undefined ||
-                              p.totalAssets) && (
-                              <div className="flex flex-wrap gap-3 mt-2 text-xs font-data">
-                                {p.criminalCases !== undefined && (
-                                  <span
-                                    className={`${p.criminalCases > 0 ? "text-status-warning" : "text-status-clean"}`}
-                                  >
-                                    {p.criminalCases > 0
-                                      ? `${p.criminalCases} case${p.criminalCases > 1 ? "s" : ""}`
-                                      : "No cases"}
-                                  </span>
-                                )}
-                                {p.totalAssets && (
-                                  <span className="text-text-tertiary">
-                                    Assets: {p.totalAssets}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-base font-semibold text-text-primary group-hover:text-accent transition-colors truncate">
+                                {p.name}
+                              </h3>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                                <span className="text-sm text-accent/80">
+                                  {p.party}
+                                </span>
+                                <span className="text-xs text-text-tertiary">
+                                  {p.constituency}
+                                </span>
+                                {p.election && (
+                                  <span className="text-xs bg-surface-tertiary text-text-tertiary px-2 py-0.5 rounded-badge">
+                                    {p.election}
                                   </span>
                                 )}
                               </div>
-                            )}
+                              {hasRichData && (
+                                <div className="flex flex-wrap gap-3 mt-2 text-xs font-data">
+                                  {p.criminalCases !== undefined && (
+                                    <span
+                                      className={`${p.criminalCases > 0 ? "text-status-warning" : "text-status-clean"}`}
+                                    >
+                                      {p.criminalCases > 0
+                                        ? `${p.criminalCases} case${p.criminalCases > 1 ? "s" : ""}`
+                                        : "No cases"}
+                                    </span>
+                                  )}
+                                  {p.totalAssets && (
+                                    <span className="text-text-tertiary">
+                                      Assets: {p.totalAssets}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              {isLinkOnly && (
+                                <div className="mt-2 flex items-center gap-1.5">
+                                  <span className="inline-flex items-center gap-1 text-xs font-medium text-accent bg-accent-muted px-2 py-0.5 rounded-badge group-hover:bg-accent/20 transition-colors">
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                    </svg>
+                                    Fetch full profile
+                                  </span>
+                                  <span className="text-[10px] text-text-tertiary">from myneta.info</span>
+                                </div>
+                              )}
+                            </div>
+                            <svg
+                              className="w-4 h-4 text-text-tertiary group-hover:text-accent transition-colors flex-shrink-0"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={2}
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M9 5l7 7-7 7"
+                              />
+                            </svg>
                           </div>
-                          <svg
-                            className="w-4 h-4 text-text-tertiary group-hover:text-accent transition-colors flex-shrink-0"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
 
-                    {/* No results */}
+                    {/* No results — show fuzzy suggestions from index */}
                     {politicians.length === 0 && (
-                      <div className="text-center py-16 px-6">
-                        <svg
-                          className="w-12 h-12 text-surface-border mx-auto mb-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={1}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                          />
-                        </svg>
-                        <h3 className="text-lg font-semibold text-text-primary mb-2">
-                          No politicians found
-                        </h3>
-                        <p className="text-text-secondary text-sm mb-4">
-                          No results for "
-                          <span className="text-accent">
-                            {searchQuery}
-                          </span>
-                          "
-                        </p>
-                        <p className="text-xs text-text-tertiary">
-                          Try a full name, constituency, or state — e.g., "Narendra Modi", "Varanasi"
-                        </p>
+                      <div className="py-8 px-2">
+                        {suggestions.length > 0 ? (
+                          <>
+                            <div className="text-center mb-6">
+                              <h3 className="text-lg font-semibold text-text-primary mb-1">
+                                Did you mean?
+                              </h3>
+                              <p className="text-text-secondary text-sm">
+                                No exact match for "
+                                <span className="text-accent">{searchQuery}</span>
+                                " — showing closest matches from{" "}
+                                <span className="font-data text-accent">{indexCount.toLocaleString()}</span>{" "}
+                                indexed politicians
+                              </p>
+                            </div>
+                            <div className="space-y-2.5">
+                              {suggestions.map((p) => (
+                                <button
+                                  key={p.profileUrl}
+                                  onClick={() => handleSelectPolitician(p)}
+                                  className="w-full text-left bg-surface-secondary border border-accent/20 p-4 rounded-card card-hover focus:outline-none focus:ring-2 focus:ring-accent/40 group"
+                                  aria-label={`View profile for ${p.name}`}
+                                >
+                                  <div className="flex items-center gap-4">
+                                    <div className="w-11 h-11 rounded-full bg-accent-muted flex items-center justify-center flex-shrink-0 group-hover:bg-accent/20 transition-colors">
+                                      <span className="text-accent font-bold text-base">
+                                        {p.name.charAt(0)}
+                                      </span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <h3 className="text-base font-semibold text-text-primary group-hover:text-accent transition-colors truncate">
+                                        {p.name}
+                                      </h3>
+                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                                        <span className="text-sm text-accent/80">
+                                          {p.party}
+                                        </span>
+                                        <span className="text-xs text-text-tertiary">
+                                          {p.constituency}
+                                        </span>
+                                        {p.election && (
+                                          <span className="text-xs bg-surface-tertiary text-text-tertiary px-2 py-0.5 rounded-badge">
+                                            {p.election}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {(p.criminalCases !== undefined || p.totalAssets) && (
+                                        <div className="flex flex-wrap gap-3 mt-2 text-xs font-data">
+                                          {p.criminalCases !== undefined && (
+                                            <span className={`${p.criminalCases > 0 ? "text-status-warning" : "text-status-clean"}`}>
+                                              {p.criminalCases > 0
+                                                ? `${p.criminalCases} case${p.criminalCases > 1 ? "s" : ""}`
+                                                : "No cases"}
+                                            </span>
+                                          )}
+                                          {p.totalAssets && (
+                                            <span className="text-text-tertiary">
+                                              Assets: {p.totalAssets}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <svg
+                                      className="w-4 h-4 text-text-tertiary group-hover:text-accent transition-colors flex-shrink-0"
+                                      fill="none"
+                                      viewBox="0 0 24 24"
+                                      stroke="currentColor"
+                                      strokeWidth={2}
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M9 5l7 7-7 7"
+                                      />
+                                    </svg>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                            <div className="mt-6">
+                              <RequestPolitician prefillName={searchQuery} />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-center py-8">
+                            <svg
+                              className="w-12 h-12 text-surface-border mx-auto mb-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                              strokeWidth={1}
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                              />
+                            </svg>
+                            <h3 className="text-lg font-semibold text-text-primary mb-2">
+                              No politicians found
+                            </h3>
+                            <p className="text-text-secondary text-sm mb-4">
+                              No results for "
+                              <span className="text-accent">{searchQuery}</span>
+                              " across {indexCount.toLocaleString()} indexed politicians
+                            </p>
+                            <p className="text-xs text-text-tertiary mb-6">
+                              Try a full name, constituency, or state — e.g., "Narendra Modi", "Varanasi"
+                            </p>
+                            <RequestPolitician prefillName={searchQuery} />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Coming Soon Section - shown below results on home */}
+                {/* Request a politician + Coming Soon — shown below results */}
                 {!isLoading && !error && politicians.length > 0 && (
-                  <ComingSoonSection />
+                  <>
+                    <div className="mt-6">
+                      <RequestPolitician />
+                    </div>
+                    <ComingSoonSection />
+                  </>
                 )}
               </div>
             )}

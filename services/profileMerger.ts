@@ -39,25 +39,6 @@ export function mapApiProfile(apiData: any, profileUrl: string): PoliticianProfi
   };
 }
 
-/**
- * Merge a live-fetched profile with local cached data.
- * Live data takes precedence, but local fills gaps.
- */
-export function mergeProfiles(
-  live: PoliticianProfileData,
-  local: PoliticianProfileData,
-): PoliticianProfileData {
-  return {
-    ...live,
-    education: live.education !== 'Not declared' ? live.education : local.education,
-    photoUrl: live.photoUrl.includes('ui-avatars') ? local.photoUrl : live.photoUrl,
-    assetDeclarations:
-      live.assetDeclarations.length > 0 ? live.assetDeclarations : local.assetDeclarations,
-    criminalCases:
-      live.criminalCases.length > 0 ? live.criminalCases : local.criminalCases,
-  };
-}
-
 /** Generate a deterministic avatar URL from a name. */
 export function generateAvatarUrl(name: string): string {
   return `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=f6ad55&color=1a202c&size=200`;

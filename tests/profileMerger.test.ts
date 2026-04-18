@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mapApiProfile, mergeProfiles, generateAvatarUrl } from '../services/profileMerger';
+import { mapApiProfile, generateAvatarUrl } from '../services/profileMerger';
 
 describe('profileMerger', () => {
   // ── mapApiProfile ─────────────────────────────────────────────────────────
@@ -83,76 +83,6 @@ describe('profileMerger', () => {
       const result = mapApiProfile({ name: 'Amit Shah' }, 'https://x.com');
       expect(result.photoUrl).toContain('ui-avatars.com');
       expect(result.photoUrl).toContain('Amit%20Shah');
-    });
-  });
-
-  // ── mergeProfiles ─────────────────────────────────────────────────────────
-
-  describe('mergeProfiles', () => {
-    const localProfile = {
-      profileUrl: 'https://local.com',
-      name: 'Local Politician',
-      party: 'Local Party',
-      constituency: 'Local City',
-      education: 'PhD in Economics',
-      photoUrl: 'https://local.com/photo.jpg',
-      assetDeclarations: [{ year: 2020, totalAssets: 5000000, liabilities: 0, sourceUrl: 'https://local.com' }],
-      criminalCases: [{ ipcSection: 'IPC 420', description: 'Fraud', status: 'Pending' as const, sourceUrl: 'https://local.com' }],
-    };
-
-    it('live data takes precedence when available', () => {
-      const liveProfile = {
-        ...localProfile,
-        name: 'Live Politician',
-        education: 'MBA',
-        photoUrl: 'https://live.com/photo.jpg',
-        assetDeclarations: [{ year: 2024, totalAssets: 9000000, liabilities: 100000, sourceUrl: 'https://live.com' }],
-        criminalCases: [{ ipcSection: 'IPC 302', description: 'Murder', status: 'Acquitted' as const, sourceUrl: 'https://live.com' }],
-      };
-
-      const merged = mergeProfiles(liveProfile, localProfile);
-
-      expect(merged.name).toBe('Live Politician');
-      expect(merged.education).toBe('MBA');
-      expect(merged.photoUrl).toBe('https://live.com/photo.jpg');
-      expect(merged.assetDeclarations[0].year).toBe(2024);
-      expect(merged.criminalCases[0].ipcSection).toBe('IPC 302');
-    });
-
-    it('falls back to local education when live says "Not declared"', () => {
-      const liveProfile = { ...localProfile, education: 'Not declared' };
-      const merged = mergeProfiles(liveProfile, localProfile);
-      expect(merged.education).toBe('PhD in Economics');
-    });
-
-    it('falls back to local photo when live has ui-avatars placeholder', () => {
-      const liveProfile = {
-        ...localProfile,
-        photoUrl: 'https://ui-avatars.com/api/?name=Test',
-      };
-      const merged = mergeProfiles(liveProfile, localProfile);
-      expect(merged.photoUrl).toBe('https://local.com/photo.jpg');
-    });
-
-    it('falls back to local assets when live has empty array', () => {
-      const liveProfile = { ...localProfile, assetDeclarations: [] };
-      const merged = mergeProfiles(liveProfile, localProfile);
-      expect(merged.assetDeclarations).toHaveLength(1);
-      expect(merged.assetDeclarations[0].year).toBe(2020);
-    });
-
-    it('falls back to local criminal cases when live has empty array', () => {
-      const liveProfile = { ...localProfile, criminalCases: [] };
-      const merged = mergeProfiles(liveProfile, localProfile);
-      expect(merged.criminalCases).toHaveLength(1);
-    });
-
-    it('uses live data for empty fields if local also empty', () => {
-      const emptyLive = { ...localProfile, assetDeclarations: [], criminalCases: [] };
-      const emptyLocal = { ...localProfile, assetDeclarations: [], criminalCases: [] };
-      const merged = mergeProfiles(emptyLive, emptyLocal);
-      expect(merged.assetDeclarations).toEqual([]);
-      expect(merged.criminalCases).toEqual([]);
     });
   });
 

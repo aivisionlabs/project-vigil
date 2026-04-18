@@ -13,6 +13,10 @@
       "destination": "/api/reports"
     },
     {
+      "source": "/api/prs",
+      "destination": "/api/prs"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/scrape"
     },
@@ -29,6 +33,9 @@
       "maxDuration": 60
     },
     "api/reports.ts": {
+      "maxDuration": 30
+    },
+    "api/prs.ts": {
       "maxDuration": 30
     }
   }

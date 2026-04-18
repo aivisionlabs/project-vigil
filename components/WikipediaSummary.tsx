@@ -7,62 +7,166 @@ interface WikipediaSummaryProps {
   constituency?: string;
 }
 
-async function fetchWikipediaSummary(name: string): Promise<WikipediaSummaryData | null> {
-  try {
-    // Search Wikipedia for the politician
-    const searchUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name.replace(/ /g, '_'))}`;
-    const resp = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
+/**
+ * Normalize name for Wikipedia lookup: title-case, strip honorifics.
+ */
+function normalizeForWiki(name: string): string {
+  let n = name.trim();
+  // If ALL CAPS, convert to title case
+  if (n === n.toUpperCase() && n.length > 3) {
+    n = n
+      .toLowerCase()
+      .split(' ')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+  // Strip common Indian honorifics
+  n = n.replace(/^(Shri\.?\s+|Smt\.?\s+|Dr\.?\s+|Adv\.?\s+|Sri\.?\s+|Prof\.?\s+)/i, '');
+  return n.trim();
+}
 
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.extract && data.extract.length > 50) {
-        return {
-          title: data.title,
-          extract: data.extract,
-          pageUrl: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(name.replace(/ /g, '_'))}`,
-          thumbnail: data.thumbnail?.source,
-        };
-      }
+/**
+ * Check if a Wikipedia extract is about an Indian politician (not a cricketer, actor, etc.)
+ */
+function isPoliticianArticle(extract: string, constituency?: string): boolean {
+  const lower = extract.toLowerCase();
+
+  // Strong positive signals
+  const politicianKeywords = [
+    'politician', 'member of parliament', 'lok sabha', 'rajya sabha',
+    'chief minister', 'minister', 'mla', 'mp', 'legislative assembly',
+    'member of the legislative', 'elected', 'constituency',
+    'bjp', 'congress', 'indian national congress', 'bharatiya janata',
+    'political', 'legislature', 'vidhan sabha', 'sansad',
+  ];
+
+  const hasPoliticianSignal = politicianKeywords.some(kw => lower.includes(kw));
+
+  // If constituency is mentioned in the article, strong match
+  if (constituency) {
+    const constLower = constituency.toLowerCase().replace(/\s*\((sc|st|gen)\)\s*/i, '');
+    if (lower.includes(constLower)) return true;
+  }
+
+  return hasPoliticianSignal;
+}
+
+async function fetchWikipediaSummary(
+  name: string,
+  constituency?: string,
+): Promise<WikipediaSummaryData | null> {
+  const cleanName = normalizeForWiki(name);
+
+  try {
+    // Strategy 1: Direct page lookup by name
+    const directResult = await tryDirectLookup(cleanName);
+    if (directResult && isPoliticianArticle(directResult.extract, constituency)) {
+      return directResult;
     }
 
-    // Try search API as fallback
-    const fallbackUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(name + ' Indian politician')}&format=json&origin=*&srlimit=1`;
-    const fallbackResp = await fetch(fallbackUrl, { signal: AbortSignal.timeout(8000) });
-    if (!fallbackResp.ok) return null;
+    // Strategy 2: Search with "politician" qualifier
+    const searchResult = await trySearchLookup(`${cleanName} Indian politician`, constituency);
+    if (searchResult) return searchResult;
 
-    const fallbackData = await fallbackResp.json();
-    const results = fallbackData?.query?.search;
-    if (!results || results.length === 0) return null;
+    // Strategy 3: Search with constituency for disambiguation
+    if (constituency) {
+      const constClean = constituency.replace(/\s*\((SC|ST|Gen)\)\s*/i, '').trim();
+      const constResult = await trySearchLookup(`${cleanName} ${constClean}`, constituency);
+      if (constResult) return constResult;
+    }
 
-    const pageTitle = results[0].title;
-    const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`;
-    const summaryResp = await fetch(summaryUrl, { signal: AbortSignal.timeout(8000) });
-    if (!summaryResp.ok) return null;
+    // Strategy 4: If direct lookup found *something* (even non-politician), return it
+    // with a note — better than nothing for well-known figures
+    if (directResult && directResult.extract.length > 100) {
+      return directResult;
+    }
 
-    const summaryData = await summaryResp.json();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function tryDirectLookup(name: string): Promise<WikipediaSummaryData | null> {
+  try {
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(name.replace(/ /g, '_'))}`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+
+    if (!resp.ok) return null;
+
+    const data = await resp.json();
+    // Wikipedia returns type "disambiguation" for disambiguation pages
+    if (data.type === 'disambiguation') return null;
+    if (!data.extract || data.extract.length < 50) return null;
+
     return {
-      title: summaryData.title,
-      extract: summaryData.extract || '',
-      pageUrl: summaryData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`,
-      thumbnail: summaryData.thumbnail?.source,
+      title: data.title,
+      extract: data.extract,
+      pageUrl: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(name.replace(/ /g, '_'))}`,
+      thumbnail: data.thumbnail?.source,
     };
   } catch {
     return null;
   }
 }
 
-export const WikipediaSummary: React.FC<WikipediaSummaryProps> = ({ politicianName }) => {
+async function trySearchLookup(
+  query: string,
+  constituency?: string,
+): Promise<WikipediaSummaryData | null> {
+  try {
+    const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*&srlimit=5`;
+    const resp = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return null;
+
+    const data = await resp.json();
+    const results = data?.query?.search;
+    if (!results || results.length === 0) return null;
+
+    // Check each result to find the one about the politician
+    for (const result of results) {
+      const pageTitle = result.title;
+      const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`;
+      const summaryResp = await fetch(summaryUrl, { signal: AbortSignal.timeout(6000) });
+      if (!summaryResp.ok) continue;
+
+      const summaryData = await summaryResp.json();
+      if (summaryData.type === 'disambiguation') continue;
+      if (!summaryData.extract || summaryData.extract.length < 50) continue;
+
+      // Check if this article is about a politician
+      if (isPoliticianArticle(summaryData.extract, constituency)) {
+        return {
+          title: summaryData.title,
+          extract: summaryData.extract,
+          pageUrl: summaryData.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(pageTitle.replace(/ /g, '_'))}`,
+          thumbnail: summaryData.thumbnail?.source,
+        };
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export const WikipediaSummary: React.FC<WikipediaSummaryProps> = ({
+  politicianName,
+  constituency,
+}) => {
   const [data, setData] = useState<WikipediaSummaryData | null>(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    fetchWikipediaSummary(politicianName).then(result => {
+    setData(null);
+    fetchWikipediaSummary(politicianName, constituency).then(result => {
       setData(result);
       setLoading(false);
     });
-  }, [politicianName]);
+  }, [politicianName, constituency]);
 
   if (loading) {
     return (

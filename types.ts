@@ -32,6 +32,19 @@ export interface AssociatedReport {
   sourceUrl: string;
 }
 
+export interface ParliamentaryPerformance {
+  attendance: {
+    percentage: number;
+    nationalAverage: number;
+    stateAverage: number;
+  } | null;
+  questionsAsked: number | null;
+  debatesParticipated: number | null;
+  billsIntroduced: number | null;
+  term: string; // e.g. "18th Lok Sabha"
+  sourceUrl: string;
+}
+
 export interface PoliticianProfileData {
   profileUrl: string;
   name: string;
@@ -49,6 +62,7 @@ export interface PoliticianProfileData {
     panGiven: string;
   };
   wikipediaUrl?: string;
+  parliamentaryPerformance?: ParliamentaryPerformance;
 }
 
 export interface WikipediaSummaryData {
