@@ -9,9 +9,9 @@ interface ReportFinding {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const name = req.query.name as string;
-  const party = req.query.party as string;
-  const constituency = req.query.constituency as string;
+  const name = decodeURIComponent((req.query.name as string) || '').replace(/\+/g, ' ');
+  const party = decodeURIComponent((req.query.party as string) || '').replace(/\+/g, ' ');
+  const constituency = decodeURIComponent((req.query.constituency as string) || '').replace(/\+/g, ' ');
 
   if (!name) {
     return res.status(400).json({ error: 'Politician name is required.', reports: [] });
@@ -90,14 +90,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-function getGenericFallback(name: string): ReportFinding[] {
-  return [
-    {
-      department_name: `Government Audit Observations`,
-      finding_summary: `AI-generated audit summary is temporarily unavailable for ${name}. Please refer to the official CAG reports portal for the latest findings related to their ministerial or constituency responsibilities.`,
-      loss_amount_rs_crore: 'N/A',
-      source_report_page: 'Visit cag.gov.in for official reports',
-      sourceUrl: 'https://cag.gov.in/en/reports-list',
-    },
-  ];
+function getGenericFallback(_name: string): ReportFinding[] {
+  return [];
 }

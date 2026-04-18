@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as cheerio from 'cheerio';
-import { aiExtractSearchResults } from './lib/aiExtractor';
+import { aiExtractSearchResults } from './lib/aiExtractor.js';
 
 const MYNETA_BASE = 'https://www.myneta.info';
 

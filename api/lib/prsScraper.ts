@@ -3,7 +3,7 @@
  * and api/profile.ts (bundled into profile scrape).
  */
 import * as cheerio from 'cheerio';
-import { toPrsSlug, normalizeName, normalizeConstituency, nameSimilarity } from './matchIdentity';
+import { toPrsSlug, normalizeName, normalizeConstituency, nameSimilarity } from './matchIdentity.js';
 
 const PRS_BASE = 'https://prsindia.org';
 const USER_AGENT = 'Mozilla/5.0 (compatible; ProjectVigil/1.0; +https://projectvigil.in)';

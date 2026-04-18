@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getPoliticianProfile, getAssociatedReports } from '../services/api';
-import { fetchLiveProfile } from '../services/liveFetcher';
+import { fetchLiveProfile, fetchLivePrs } from '../services/liveFetcher';
 import { mapApiProfile } from '../services/profileMerger';
 import { cacheRemoteProfile } from '../services/supabaseCache';
 import type { PoliticianProfileData, AssociatedReport, DataMeta } from '../types';
@@ -121,6 +121,7 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isScraping, setIsScraping] = useState(false);
   const [scrapeError, setScrapeError] = useState<string | null>(null);
+  const [prsLoading, setPrsLoading] = useState(true);
 
   const [loadStartTime] = useState(Date.now());
   const [scrapeStartTime, setScrapeStartTime] = useState<number | null>(null);
@@ -135,6 +136,10 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
         setProfile(result.profile);
         setProfileMeta(result.meta);
         setWarnings(result.warnings);
+        // If profile already has PRS data, no need to fetch separately
+        if (result.profile?.parliamentaryPerformance) {
+          setPrsLoading(false);
+        }
       } catch (err) {
         setProfileError(err instanceof Error ? err.message : 'Failed to load profile.');
       } finally {
@@ -161,6 +166,55 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
     fetchReports();
   }, [politicianName, politicianParty, politicianConstituency]);
 
+  // Fetch PRS data independently when the profile doesn't include it
+  useEffect(() => {
+    if (profileLoading || profile?.parliamentaryPerformance) return;
+
+    const isLokSabha = indexElection?.toLowerCase().includes('lok sabha');
+    if (!isLokSabha) {
+      setPrsLoading(false);
+      return;
+    }
+
+    const fetchPrs = async () => {
+      setPrsLoading(true);
+      try {
+        const result = await fetchLivePrs(politicianName, politicianConstituency);
+        if (result.performance) {
+          const perf = result.performance as any;
+          const prsData = {
+            attendance: perf.attendance ?? null,
+            questionsAsked: perf.questionsAsked ?? null,
+            debatesParticipated: perf.debatesParticipated ?? null,
+            billsIntroduced: perf.billsIntroduced ?? null,
+            questions: Array.isArray(perf.questions)
+              ? perf.questions.map((q: any) => ({
+                  subject: q.subject || q.title || '',
+                  type: q.type || 'Unknown',
+                  date: q.date || '',
+                  ministry: q.ministry || '',
+                }))
+              : [],
+            term: perf.term || '18th Lok Sabha',
+            sourceUrl: perf.sourceUrl || '',
+          };
+          setProfile(prev => {
+            if (!prev) return null;
+            const updated = { ...prev, parliamentaryPerformance: prsData };
+            // Update Supabase cache with PRS data included
+            cacheRemoteProfile(profileUrl, updated);
+            return updated;
+          });
+        }
+      } catch (err) {
+        console.warn('Separate PRS fetch failed:', err);
+      } finally {
+        setPrsLoading(false);
+      }
+    };
+    fetchPrs();
+  }, [profileLoading, profile?.parliamentaryPerformance, politicianName, politicianConstituency, indexElection]);
+
   const handleScrapeProfile = useCallback(async () => {
     setIsScraping(true);
     setScrapeError(null);
@@ -174,6 +228,9 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
         setProfile(scraped);
         setProfileMeta({ source: 'live', fetchedAt: data.meta?.fetchedAt });
         setWarnings([]);
+        if (scraped.parliamentaryPerformance) {
+          setPrsLoading(false);
+        }
 
         cacheRemoteProfile(profileUrl, scraped);
       } else {
@@ -362,7 +419,7 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
       )}
 
       {/* ── Parliamentary Performance (PRS India) ────────────── */}
-      {profileLoading ? (
+      {(profileLoading || prsLoading) ? (
         <div className="bg-surface-secondary border border-surface-border p-5 rounded-card">
           <div className="h-5 skeleton w-1/2 mb-4" />
           <div className="space-y-3">
@@ -378,7 +435,7 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
         </div>
       ) : displayProfile?.parliamentaryPerformance ? (
         <ParliamentaryPerformance data={displayProfile.parliamentaryPerformance} />
-      ) : !profileLoading && displayProfile && indexElection && !indexElection.toLowerCase().includes('lok sabha') ? (
+      ) : !profileLoading && !prsLoading && displayProfile && indexElection && !indexElection.toLowerCase().includes('lok sabha') ? (
         <div className="bg-surface-secondary border border-surface-border p-4 rounded-card">
           <div className="flex items-center gap-2.5">
             <svg className="w-5 h-5 text-text-tertiary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -394,7 +451,7 @@ export const PoliticianProfile: React.FC<PoliticianProfileProps> = ({
             </div>
           </div>
         </div>
-      ) : !profileLoading && displayProfile && !isPartialProfile ? (
+      ) : !profileLoading && !prsLoading && displayProfile && !isPartialProfile ? (
         <div className="bg-surface-secondary border border-surface-border p-4 rounded-card">
           <div className="flex items-center gap-2.5">
             <svg className="w-5 h-5 text-text-tertiary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

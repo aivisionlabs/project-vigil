@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { fetchPrsPerformance } from './lib/prsScraper';
+import { fetchPrsPerformance } from './lib/prsScraper.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const name = (req.query.name as string || '').trim();

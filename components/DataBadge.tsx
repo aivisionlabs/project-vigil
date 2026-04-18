@@ -29,11 +29,6 @@ export const DataBadge: React.FC<DataBadgeProps> = ({
           </span>
         )}
       </span>
-      {meta.reason && !isLive && (
-        <span className="text-xs text-status-warning/70" title={meta.reason}>
-          — {meta.reason}
-        </span>
-      )}
     </div>
   );
 };

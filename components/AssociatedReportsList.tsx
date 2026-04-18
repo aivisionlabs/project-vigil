@@ -18,7 +18,7 @@ export const AssociatedReportsList: React.FC<AssociatedReportsListProps> = ({ re
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
             </svg>
-            AI-generated summary from publicly available CAG/CVC data
+            AI-generated illustrative examples — not sourced from actual CAG/CVC reports
           </p>
         </div>
         {meta && (
@@ -43,7 +43,7 @@ export const AssociatedReportsList: React.FC<AssociatedReportsListProps> = ({ re
           </svg>
           <p className="text-text-secondary text-sm">No associated audit findings available.</p>
           <p className="text-xs text-text-tertiary mt-1">
-            Report analysis was not generated for this politician.
+            Visit <a href="https://cag.gov.in/en/reports-list" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">cag.gov.in</a> for official CAG/CVC audit reports.
           </p>
         </div>
       ) : (
