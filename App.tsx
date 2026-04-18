@@ -6,6 +6,7 @@ import { DataBadge } from "./components/DataBadge";
 import { ComingSoonSection } from "./components/ComingSoonSection";
 import { RequestPolitician } from "./components/RequestPolitician";
 import { searchPoliticians } from "./services/api";
+import { fuzzySearchPoliticians } from "./services/fuzzySearch";
 import type { PoliticianSummary, DataMeta } from "./types";
 
 // ─── Slug helpers ───────────────────────────────────────────────────────────
@@ -618,7 +619,27 @@ const ProfilePage: React.FC<{
     setResolveError(false);
     setPolitician(null);
 
-    searchPoliticians(slugToName(slug))
+    const name = slugToName(slug);
+
+    // Try instant local fuzzy search first
+    const localResults = fuzzySearchPoliticians(name, 10);
+    const localMatch = localResults.find((p) => toSlug(p.name) === slug) || localResults[0];
+
+    if (localMatch) {
+      setPolitician({
+        profileUrl: localMatch.profileUrl,
+        name: localMatch.name,
+        party: localMatch.party,
+        constituency: localMatch.constituency,
+        totalAssets: localMatch.totalAssets,
+        election: localMatch.election,
+      });
+      setIsResolving(false);
+      return;
+    }
+
+    // Fallback: live search if not in local index
+    searchPoliticians(name)
       .then(({ results }) => {
         if (cancelled) return;
         const match =
